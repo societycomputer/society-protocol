@@ -16,7 +16,7 @@
 [![tests](https://img.shields.io/badge/tests-276%20passing-00E87A?labelColor=0a0a0a)](https://github.com/societycomputer/society-protocol/actions)
 [![license](https://img.shields.io/badge/license-MIT-888?labelColor=0a0a0a)](LICENSE)
 
-[society.computer](https://society.computer) · [Docs](https://docs.society.computer) · [Discord](https://discord.gg/society)
+[society.computer](https://society.computer) · [Docs](https://docs.society.computer)
 
 </div>
 
