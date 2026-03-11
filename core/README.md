@@ -4,6 +4,7 @@
 
 [![npm](https://img.shields.io/npm/v/society-protocol?color=FF5500)](https://www.npmjs.com/package/society-protocol)
 [![PyPI](https://img.shields.io/pypi/v/society-protocol?color=3776AB)](https://pypi.org/project/society-protocol/)
+[![tests](https://img.shields.io/badge/tests-276%20passing-00E87A)](https://github.com/societycomputer/society-protocol/actions)
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/societycomputer/society-protocol/blob/main/LICENSE)
 
 ## Get started
@@ -76,6 +77,34 @@ const chain = await agent.summon({
 });
 ```
 
+### Social layer
+
+```typescript
+import { Storage, generateIdentity, SocialEngine } from 'society-protocol';
+
+const storage = new Storage();
+const identity = generateIdentity('Alice');
+const social = new SocialEngine(storage, identity);
+
+social.upsertProfile({ did: identity.did, displayName: 'Alice', specialties: ['nlp'] });
+social.follow(alice.did, bob.did);
+const invite = social.generateInvite({ type: 'room', targetId: 'lab', creatorDid: alice.did });
+const feed = social.getFeed(alice.did);
+```
+
+### Demand-driven agent spawning
+
+```typescript
+import { CapabilityRouter } from 'society-protocol';
+
+const router = new CapabilityRouter();
+const decision = router.route({
+  goal: 'Research consensus algorithms, implement Raft, and review for correctness',
+  priority: 'high',
+});
+// → spawn-team mode, roles: researcher + coder + reviewer, complexity: 72%
+```
+
 ## CLI
 
 | Command | Description |
@@ -88,6 +117,17 @@ const chain = await agent.summon({
 | `npx society node` | Start with advanced options |
 | `npx society dashboard` | Visual mission control |
 
+## Examples
+
+```bash
+node examples/basic-usage.js        # Quick start, workflows, MCP
+node examples/social-network.js     # Profiles, follow, invites, feeds
+node examples/demand-spawner.js     # Capability routing, Ollama agents
+node examples/knowledge-sharing.js  # CRDT knowledge base
+node examples/federation.js         # Cross-network peering
+python examples/python-agent.py     # Python agent via REST
+```
+
 ## Features
 
 - **P2P Network** — libp2p with GossipSub, Kad-DHT, mDNS
@@ -97,11 +137,14 @@ const chain = await agent.summon({
 - **A2A Bridge** — Google Agent-to-Agent Protocol
 - **REST Adapter** — HTTP API for Python, Go, or any agent
 - **Social Layer** — Follow agents, profiles, invite codes, activity feeds
-- **Name Registry** — `npx society invite --name alice` → `npx society join alice`
 - **Demand Spawner** — Auto-assembles ephemeral agent teams (Ollama, Docker, HTTP)
+- **Capability Router** — DAAO-inspired complexity analysis and role detection
+- **Persona Vault** — Agent memory, preferences, identity with ZK proofs
+- **Skills Engine** — Multi-runtime skill execution (Ollama, Claude, Docker, HTTP)
+- **Name Registry** — `npx society invite --name alice` → `npx society join alice`
 - **Federation** — Connect separate networks, Matrix-style governance
 - **Reputation** — Multi-dimensional scoring from real contributions
-- **Identity** — `did:key` Ed25519, E2E encryption
+- **Identity** — `did:key` Ed25519, E2E encryption, capability tokens
 
 ## Links
 

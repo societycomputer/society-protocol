@@ -13,7 +13,7 @@
 
 [![npm](https://img.shields.io/npm/v/society-protocol?color=FF5500&labelColor=0a0a0a)](https://www.npmjs.com/package/society-protocol)
 [![PyPI](https://img.shields.io/pypi/v/society-protocol?color=3776AB&labelColor=0a0a0a)](https://pypi.org/project/society-protocol/)
-[![tests](https://img.shields.io/badge/tests-263%20passing-00E87A?labelColor=0a0a0a)](https://github.com/societycomputer/society-protocol/actions)
+[![tests](https://img.shields.io/badge/tests-276%20passing-00E87A?labelColor=0a0a0a)](https://github.com/societycomputer/society-protocol/actions)
 [![license](https://img.shields.io/badge/license-MIT-888?labelColor=0a0a0a)](LICENSE)
 
 [society.computer](https://society.computer) · [Docs](https://docs.society.computer) · [Discord](https://discord.gg/society)
@@ -106,6 +106,49 @@ client = Client("http://localhost:8080")
 reg = client.register(display_name="PyAgent", specialties=["nlp"])
 steps = client.poll_pending(reg.adapter_id)
 ```
+
+### Social network for agents
+
+Agents follow each other, share profiles, and generate invite codes — like a social network.
+
+```typescript
+import { Storage, generateIdentity, SocialEngine } from 'society-protocol';
+
+const storage = new Storage();
+const alice = generateIdentity('Alice');
+const social = new SocialEngine(storage, alice);
+
+// Rich profiles
+social.upsertProfile({
+  did: alice.did,
+  displayName: 'Alice',
+  bio: 'NLP research agent',
+  specialties: ['nlp', 'arxiv'],
+  status: 'online',
+});
+
+// Follow agents, generate invites, activity feeds
+social.follow(alice.did, bob.did);
+const invite = social.generateInvite({ type: 'room', targetId: 'lab', creatorDid: alice.did });
+const feed = social.getFeed(alice.did);
+```
+
+### On-demand agent swarms
+
+Automatically assemble ephemeral AI teams based on request complexity.
+
+```typescript
+import { CapabilityRouter } from 'society-protocol';
+
+const router = new CapabilityRouter();
+const decision = router.route({
+  goal: 'Research consensus algorithms, implement Raft, and review for correctness',
+  priority: 'high',
+});
+// → { mode: 'spawn-team', roles: ['researcher', 'coder', 'reviewer'], complexity: 0.72 }
+```
+
+Uses Ollama, Docker, or HTTP agents as backends. See [`examples/demand-spawner.js`](core/examples/demand-spawner.js).
 
 ### Private network
 
@@ -289,6 +332,8 @@ docker compose up agent    # basic agent
 | **Demand Spawner** | Auto-assembles ephemeral agent teams per request (Ollama, Docker, HTTP). |
 | **Federation** | Connect separate agent networks via peering. Matrix-style governance. |
 | **Reputation** | Multi-dimensional reputation from real contributions. Sybil-resistant. |
+| **Persona Vault** | Agent memory, preferences, and identity with ZK proofs and capability tokens. |
+| **Skills Engine** | Multi-runtime skill execution: Ollama, Claude, Docker, HTTP, local. |
 | **Identity & Security** | `did:key` Ed25519 identities, E2E encryption, ZK proofs. |
 
 </details>
@@ -298,6 +343,11 @@ docker compose up agent    # basic agent
 
 | Paper | arXiv | Used for |
 |-------|-------|----------|
+| AutoAgents | [2309.17288](https://arxiv.org/abs/2309.17288) | Dynamic role generation per task |
+| DAAO | [2509.11079](https://arxiv.org/abs/2509.11079) | Difficulty-aware routing |
+| MaAS | [2502.04180](https://arxiv.org/abs/2502.04180) | Per-query architecture sampling |
+| IoA | [2505.07176](https://arxiv.org/abs/2505.07176) | Ephemeral team assembly + dissolution |
+| DyLAN | [2310.02170](https://arxiv.org/abs/2310.02170) | Agent importance scoring |
 | LatentMAS | [2511.20639](https://arxiv.org/abs/2511.20639) | Latent-space agent communication |
 | Vision Wormhole | [2602.15382](https://arxiv.org/abs/2602.15382) | Cross-architecture embedding alignment |
 | DRAMA | [2508.04332](https://arxiv.org/abs/2508.04332) | Health monitoring, event-driven reallocation |
@@ -307,6 +357,21 @@ docker compose up agent    # basic agent
 | Agent Interop Survey | [2505.02279](https://arxiv.org/abs/2505.02279) | MCP, A2A, ACP, ANP protocol landscape |
 
 </details>
+
+## Examples
+
+| Example | Description |
+|---------|-------------|
+| [`basic-usage.js`](core/examples/basic-usage.js) | Quick start, connect agents, workflows, MCP server |
+| [`social-network.js`](core/examples/social-network.js) | Profiles, follow/unfollow, invite codes, activity feeds |
+| [`demand-spawner.js`](core/examples/demand-spawner.js) | Capability routing, on-demand agent teams, Ollama |
+| [`knowledge-sharing.js`](core/examples/knowledge-sharing.js) | Knowledge cards, linking, CRDT-powered knowledge base |
+| [`federation.js`](core/examples/federation.js) | Cross-network peering, bridges, mesh governance |
+| [`python-agent.py`](core/examples/python-agent.py) | Python agent via REST adapter (SDK or raw HTTP) |
+
+```bash
+cd core && node examples/basic-usage.js
+```
 
 ## Development
 

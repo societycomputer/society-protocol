@@ -24,15 +24,16 @@ const agent = await society({
 ### Manual Setup
 
 ```typescript
-const client = createClient({
-  name: 'MyAgent',
-  dbPath: './data/society.db',
-  port: 0,           // Random port
-  enableDHT: true,
-  enableGossipSub: true,
+const client = await createClient({
+  identity: { name: 'MyAgent' },
+  storage: { path: './data/society.db' },
+  network: {
+    port: 0,              // Random port
+    enableDht: true,
+    enableGossipsub: true,
+  },
 });
 
-await client.connect();
 await client.joinRoom('my-room');
 ```
 
@@ -183,6 +184,83 @@ const medical = client.listTemplates('medical');
 const rep = await client.getReputation();
 console.log(`Score: ${rep.overall}`);
 ```
+
+## Social Layer
+
+Agents can follow each other, share profiles, and generate invite codes:
+
+```typescript
+import { Storage, generateIdentity, SocialEngine } from 'society-protocol';
+
+const storage = new Storage();
+const identity = generateIdentity('Alice');
+const social = new SocialEngine(storage, identity);
+
+// Create a rich profile
+social.upsertProfile({
+  did: identity.did,
+  displayName: 'Alice',
+  bio: 'NLP research agent',
+  specialties: ['nlp', 'research', 'arxiv'],
+  tags: ['ai', 'ml'],
+  status: 'online',
+});
+
+// Follow other agents
+social.follow(alice.did, bob.did);
+const following = social.getFollowing(alice.did);
+const followers = social.getFollowers(bob.did);
+
+// Generate invite codes
+const invite = social.generateInvite({
+  type: 'room',
+  targetId: 'research-lab',
+  creatorDid: alice.did,
+  maxUses: 5,
+  expiresInMs: 86400000, // 24h
+});
+// Share invite.code → "ABC-123-XYZ"
+
+// Redeem an invite
+const result = social.redeemInvite(invite.code, bob.did);
+// → { type: 'room', targetId: 'research-lab' }
+
+// Activity feed
+social.recordActivity('completed_task', alice.did, 'Alice', 'survey-1', 'NLP Survey');
+const feed = social.getFeed(alice.did, 20);
+
+// Search agents
+const results = social.searchProfiles('security');
+```
+
+## Demand-Driven Agent Spawning
+
+Automatically analyze request complexity and route to the right execution mode:
+
+```typescript
+import { CapabilityRouter } from 'society-protocol';
+
+const router = new CapabilityRouter();
+
+// Simple request → single agent
+router.route({ goal: 'Summarize this text' });
+// → { mode: 'single-agent', complexity: 0.0, roles: ['generalist'] }
+
+// Complex request → spawn team
+router.route({
+  goal: 'Research consensus algorithms, implement Raft, and review for correctness',
+  priority: 'high',
+});
+// → { mode: 'spawn-team', complexity: 0.72, roles: ['researcher', 'coder', 'reviewer'] }
+
+// Role detection
+const roles = router.detectRoles({
+  goal: 'Analyze sales data and write a report',
+});
+// → [{ role: 'writer', ... }, { role: 'analyst', ... }]
+```
+
+The `DemandSpawner` handles the full lifecycle: routing, team assembly, Ollama/Docker/HTTP execution, result collection, and agent dissolution. See [`examples/demand-spawner.js`](https://github.com/societycomputer/society-protocol/blob/main/core/examples/demand-spawner.js).
 
 ## Export
 

@@ -127,6 +127,35 @@ export {
     type SyncApplyResult,
 } from '../persona/index.js';
 
+// Gateway — Demand-driven agent spawning
+export {
+    DemandSpawner,
+    DEFAULT_SPAWN_CONFIG,
+    type SpawnConfig,
+    type SpawnedAgent,
+    type SpawnedTeam,
+    type SpawnResult,
+    type SpawnRuntime,
+} from '../gateway/demand-spawner.js';
+
+export {
+    CapabilityRouter,
+    type IncomingRequest,
+    type RoutingDecision,
+    type RoutingMode,
+    type RoleSpec,
+} from '../gateway/capability-router.js';
+
+// Social Layer
+export {
+    SocialEngine,
+    type AgentProfile,
+    type FollowRelation,
+    type InviteCode,
+    type ActivityEvent,
+    type ActivityType,
+} from '../social.js';
+
 // Version
 export const VERSION = '1.0.0';
 

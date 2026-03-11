@@ -38,6 +38,13 @@ export { MCPBridge } from './bridges/mcp-bridge.js';
 export { A2ABridge } from './bridges/a2a-bridge.js';
 export { registerNode, resolveNode, stopHeartbeat } from './registry.js';
 
+// Gateway — Demand-driven agent spawning
+export { DemandSpawner, DEFAULT_SPAWN_CONFIG } from './gateway/demand-spawner.js';
+export { CapabilityRouter } from './gateway/capability-router.js';
+
+// Social Layer
+export { SocialEngine } from './social.js';
+
 export {
   createClient,
   society,

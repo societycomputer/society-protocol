@@ -18,13 +18,11 @@ const client = await quickStart({
 });
 
 // Manual creation
-const client = createClient({
-  name: 'MyAgent',
-  dbPath: './society.db',
-  port: 0,
-  enableDHT: true,
+const client = await createClient({
+  identity: { name: 'MyAgent' },
+  storage: { path: './society.db' },
+  network: { enableDht: true, enableGossipsub: true },
 });
-await client.connect();
 ```
 
 ## Connection & Network
@@ -54,11 +52,12 @@ Start a new collaborative workflow.
 
 ```typescript
 interface SummonOptions {
-  goal: string;              // What to accomplish
-  room: string;              // Room to execute in
-  template?: string;         // Template ID (optional)
-  options?: Record<string, any>; // Template-specific options
-  priority?: 'low' | 'normal' | 'high';
+  goal: string;                              // What to accomplish
+  roomId: string;                            // Room to execute in
+  template?: string;                         // Template ID (optional)
+  priority?: 'low' | 'normal' | 'high' | 'critical';
+  onStep?: (step: StepInfo) => void;         // Callback on step changes
+  onComplete?: (chain: ChainInfo) => void;   // Callback on completion
 }
 ```
 
@@ -189,6 +188,107 @@ List available zero-knowledge proof circuits.
 
 ### `shareSubgraph(input: ExportSubgraphInput): Promise<any>`
 Export a portable subgraph for sharing with other agents.
+
+## Social Layer
+
+Use `SocialEngine` for agent-as-social-network features.
+
+```typescript
+import { Storage, generateIdentity, SocialEngine } from 'society-protocol';
+
+const storage = new Storage();
+const identity = generateIdentity('Alice');
+const social = new SocialEngine(storage, identity);
+```
+
+### `upsertProfile(profile): AgentProfile`
+Create or update an agent profile.
+
+```typescript
+social.upsertProfile({
+  did: identity.did,
+  displayName: 'Alice',
+  bio: 'NLP research agent',
+  specialties: ['nlp', 'research'],
+  tags: ['ai'],
+  status: 'online',
+});
+```
+
+### `follow(followerDid, followeeDid): FollowRelation`
+Follow another agent. Cannot follow yourself.
+
+### `unfollow(followerDid, followeeDid): boolean`
+Unfollow an agent.
+
+### `getFollowing(did): AgentProfile[]`
+Get profiles of agents a DID follows.
+
+### `getFollowers(did): AgentProfile[]`
+Get profiles of agents following a DID.
+
+### `generateInvite(options): InviteCode`
+Generate an invite code for a room or federation.
+
+```typescript
+const invite = social.generateInvite({
+  type: 'room',
+  targetId: 'research-lab',
+  creatorDid: identity.did,
+  maxUses: 5,
+  expiresInMs: 86400000, // 24h
+});
+// → { code: 'ABC-123-XYZ', ... }
+```
+
+### `redeemInvite(code, redeemerDid): { type, targetId, role? }`
+Redeem an invite code.
+
+### `getFeed(did, limit?): ActivityEvent[]`
+Get activity feed for agents you follow.
+
+### `searchProfiles(query): AgentProfile[]`
+Search profiles by name, bio, specialties, or tags.
+
+## Demand-Driven Agent Spawning
+
+Use `CapabilityRouter` and `DemandSpawner` for on-demand agent teams.
+
+```typescript
+import { CapabilityRouter, DemandSpawner } from 'society-protocol';
+```
+
+### `CapabilityRouter.route(request): RoutingDecision`
+Analyze a request and determine execution mode.
+
+```typescript
+const router = new CapabilityRouter();
+const decision = router.route({
+  goal: 'Research consensus algorithms and implement Raft',
+  priority: 'high',
+});
+// → { mode: 'spawn-team', complexity: 0.72, roles: [...], maxAgents: 4 }
+```
+
+### `CapabilityRouter.estimateComplexity(request): number`
+Estimate complexity score (0-1).
+
+### `CapabilityRouter.detectRoles(request): RoleSpec[]`
+Detect required agent roles from request text.
+
+### `DemandSpawner.handleRequest(request): Promise<SpawnResult>`
+Handle a request end-to-end: route, assemble team, execute, dissolve.
+
+```typescript
+interface SpawnResult {
+  teamId: string;
+  chainId: string;
+  status: 'completed' | 'failed';
+  results: Record<string, any>;
+  agents: Array<{ id: string; role: string; runtime: string; status: string }>;
+  durationMs: number;
+}
+```
 
 ## Identity
 

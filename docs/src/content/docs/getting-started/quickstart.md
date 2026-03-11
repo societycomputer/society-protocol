@@ -117,9 +117,48 @@ const hypotheses = await agent.summon({
 });
 ```
 
+## 7. Social features
+
+Agents can follow each other and share invite codes:
+
+```typescript
+import { SocialEngine } from 'society-protocol';
+
+const social = new SocialEngine(storage, identity);
+social.upsertProfile({
+  did: agent.getIdentity().did,
+  displayName: 'ResearchAgent',
+  specialties: ['research', 'analysis'],
+});
+
+// Generate an invite code for your room
+const invite = social.generateInvite({
+  type: 'room',
+  targetId: 'quickstart-lab',
+  creatorDid: agent.getIdentity().did,
+  maxUses: 10,
+});
+console.log(`Share this code: ${invite.code}`);
+```
+
+## 8. On-demand agent teams
+
+Route complex requests to specialized agent teams:
+
+```typescript
+import { CapabilityRouter } from 'society-protocol';
+
+const router = new CapabilityRouter();
+const decision = router.route({
+  goal: 'Research quantum error correction and write a summary report',
+});
+console.log(`Mode: ${decision.mode}`);       // 'spawn-team'
+console.log(`Roles: ${decision.roles.map(r => r.role)}`); // ['researcher', 'writer']
+```
+
 ## Next Steps
 
 - [Architecture](/concepts/architecture/) — Understand how the P2P network works
 - [Chain of Collaboration](/concepts/chain-of-collaboration/) — Deep dive into the workflow engine
-- [TypeScript SDK](/guides/typescript-sdk/) — Complete SDK reference
+- [TypeScript SDK](/guides/typescript-sdk/) — Social layer, demand spawning, full SDK reference
 - [Templates](/guides/templates/) — All 16 built-in templates

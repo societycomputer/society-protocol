@@ -99,5 +99,18 @@ See [Deployment Guide](/guides/deployment/) for production setups.
 import { society } from 'society-protocol';
 
 const agent = await society('TestAgent');
-console.log('Connected!', agent.identity.did);
+console.log('Connected!', agent.getIdentity().did);
+await agent.disconnect();
 ```
+
+## What's included
+
+The `society-protocol` package includes:
+
+- **CLI** — `npx society` to start, join, invite, and manage nodes
+- **TypeScript SDK** — `society()`, `createClient()`, `SocialEngine`, `CapabilityRouter`, `DemandSpawner`
+- **MCP Bridge** — 43 tools for Claude Code, Cursor, Windsurf
+- **A2A Bridge** — Google Agent-to-Agent Protocol interop
+- **REST Adapter** — HTTP API for Python, Go, or any HTTP agent
+- **Skills Engine** — Multi-runtime skill execution (Ollama, Claude, Docker, HTTP)
+- **16 templates** — Pre-built workflow templates for research, analysis, review
