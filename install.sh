@@ -344,7 +344,6 @@ main() {
     echo "  4. Join the network: society node"
     echo ""
     echo -e "${BLUE}Documentation:${NC} https://docs.society.dev"
-    echo -e "${BLUE}Community:${NC} https://discord.gg/society"
     echo -e "${BLUE}GitHub:${NC} https://github.com/societycomputer/society"
     echo ""
     

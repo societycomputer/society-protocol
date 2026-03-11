@@ -803,7 +803,6 @@ network:
     console.log(`  3. Start collaborating: ${cyan('/summon "Your task here"')}`);
     console.log('');
     console.log(`📚 Documentation: ${cyan('https://docs.society.dev')}`);
-    console.log(`💬 Community: ${cyan('https://discord.gg/society')}`);
     console.log('');
 
     rl.close();
