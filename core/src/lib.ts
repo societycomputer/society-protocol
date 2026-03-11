@@ -6,6 +6,8 @@
 
 export {
   generateIdentity,
+  generateIdentityWithPoW,
+  verifyIdentityPoW,
   restoreIdentity,
   canonicalJson,
   deepCanonicalJson,
@@ -16,11 +18,22 @@ export {
 } from './identity.js';
 
 export { Storage } from './storage.js';
-export { P2PNode } from './p2p.js';
+export { P2PNode, knowledgeTopic, reputationTopic } from './p2p.js';
 export { RoomManager } from './rooms.js';
 export { CocEngine } from './coc.js';
 export { FederationEngine } from './federation.js';
-export { KnowledgePool } from './knowledge.js';
+export {
+  KnowledgePool,
+  compareVectorClocks,
+  mergeVectorClocks,
+  tickHLC,
+  receiveHLC,
+  compareHLC,
+  type KnowledgeCard,
+  type KnowledgeSpace,
+  type HybridLogicalClock,
+  type VectorClockOrder,
+} from './knowledge.js';
 export { SkillsEngine } from './skills/engine.js';
 export { SecurityManager } from './security.js';
 export { IntegrationEngine } from './integration.js';
@@ -30,7 +43,14 @@ export { SwarmScheduler } from './proactive/scheduler.js';
 export { MissionCheckpointService } from './proactive/checkpoints.js';
 export { ResearchWorkerNode } from './workers/research-worker.js';
 export { Planner } from './planner.js';
-export { ReputationEngine } from './reputation.js';
+export {
+  ReputationEngine,
+  type ReputationScore,
+  type ReputationObservation,
+  type TaskOutcome,
+  formatReputationTier,
+  isTrusted,
+} from './reputation.js';
 export { CotStreamEngine } from './cot-stream.js';
 export { CapsuleExporter } from './capsules.js';
 export { SocietyMCPServer } from './mcp/server.js';
