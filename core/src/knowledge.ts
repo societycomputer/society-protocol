@@ -228,6 +228,101 @@ export interface AgentModel {
     preferences: Record<string, any>;
 }
 
+// ─── CRDT Utilities ──────────────────────────────────────────────
+
+export type VectorClockOrder = 'before' | 'after' | 'concurrent' | 'equal';
+
+/**
+ * Compare two vector clocks for causal ordering.
+ * Returns:
+ *   'before'     — a causally precedes b (a < b)
+ *   'after'      — a causally follows b (a > b)
+ *   'concurrent' — neither precedes the other
+ *   'equal'      — identical clocks
+ */
+export function compareVectorClocks(
+    a: Record<string, number>,
+    b: Record<string, number>
+): VectorClockOrder {
+    const allNodes = new Set([...Object.keys(a), ...Object.keys(b)]);
+    let aLess = false;
+    let bLess = false;
+
+    for (const node of allNodes) {
+        const va = a[node] || 0;
+        const vb = b[node] || 0;
+        if (va < vb) aLess = true;
+        if (va > vb) bLess = true;
+        if (aLess && bLess) return 'concurrent';
+    }
+
+    if (!aLess && !bLess) return 'equal';
+    if (aLess && !bLess) return 'before';
+    return 'after';
+}
+
+/**
+ * Merge two vector clocks by taking component-wise maximum.
+ */
+export function mergeVectorClocks(
+    a: Record<string, number>,
+    b: Record<string, number>
+): Record<string, number> {
+    const merged: Record<string, number> = { ...a };
+    for (const [node, count] of Object.entries(b)) {
+        merged[node] = Math.max(merged[node] || 0, count);
+    }
+    return merged;
+}
+
+/**
+ * Advance HLC for a local event (Kulkarni et al. 2014, §3.1).
+ * l' = max(l.wallTime, pt) ; c' = (l' == l.wallTime) ? l.logical + 1 : 0
+ */
+export function tickHLC(current: HybridLogicalClock): HybridLogicalClock {
+    const pt = Date.now();
+    if (pt > current.wallTime) {
+        return { wallTime: pt, logical: 0, nodeId: current.nodeId };
+    }
+    return { wallTime: current.wallTime, logical: current.logical + 1, nodeId: current.nodeId };
+}
+
+/**
+ * Receive HLC from a remote message (Kulkarni et al. 2014, §3.2).
+ * Merges local and remote clocks to maintain causal ordering.
+ */
+export function receiveHLC(
+    local: HybridLogicalClock,
+    remote: HybridLogicalClock
+): HybridLogicalClock {
+    const pt = Date.now();
+    const maxWall = Math.max(local.wallTime, remote.wallTime, pt);
+
+    let logical: number;
+    if (maxWall === local.wallTime && maxWall === remote.wallTime) {
+        logical = Math.max(local.logical, remote.logical) + 1;
+    } else if (maxWall === local.wallTime) {
+        logical = local.logical + 1;
+    } else if (maxWall === remote.wallTime) {
+        logical = remote.logical + 1;
+    } else {
+        logical = 0; // pt is strictly greater
+    }
+
+    return { wallTime: maxWall, logical, nodeId: local.nodeId };
+}
+
+/**
+ * Compare two HLCs for total ordering.
+ * Returns negative if a < b, positive if a > b, 0 if equal.
+ * Tie-breaking: wallTime → logical → nodeId (lexicographic).
+ */
+export function compareHLC(a: HybridLogicalClock, b: HybridLogicalClock): number {
+    if (a.wallTime !== b.wallTime) return a.wallTime - b.wallTime;
+    if (a.logical !== b.logical) return a.logical - b.logical;
+    return a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0;
+}
+
 // ─── Knowledge Pool Engine ───────────────────────────────────────
 
 export class KnowledgePool extends EventEmitter {
@@ -388,10 +483,11 @@ export class KnowledgePool extends EventEmitter {
             throw new Error('No permission to edit');
         }
 
-        // CRDT: Incrementar versão e atualizar clocks
+        // CRDT: Advance HLC (Kulkarni et al. 2014) and increment vector clock
         card.version++;
         card.updatedAt = Date.now();
-        card.crdt.vectorClock[this.identity.did] = 
+        card.crdt.hlc = tickHLC(card.crdt.hlc);
+        card.crdt.vectorClock[this.identity.did] =
             (card.crdt.vectorClock[this.identity.did] || 0) + 1;
         
         // Aplicar updates
@@ -432,6 +528,186 @@ export class KnowledgePool extends EventEmitter {
         this.removeFromIndex(card);
         await this.saveCard(card);
         this.emit('card:deleted', id);
+    }
+
+    // ─── CRDT Merge ────────────────────────────────────────────────
+
+    /**
+     * Merge a remote knowledge card with the local copy.
+     *
+     * Algorithm (state-based CRDT with causal metadata):
+     * 1. If card is unknown locally → accept remote (new knowledge).
+     * 2. Compare vector clocks for causal ordering:
+     *    - remote ≤ local  → discard (stale).
+     *    - local < remote  → accept remote (strictly newer).
+     *    - concurrent      → LWW tie-break on HLC (wallTime, logical, nodeId).
+     * 3. Merge vector clocks (component-wise max) regardless of winner.
+     * 4. Advance local HLC via receiveHLC to maintain causal consistency.
+     * 5. Tombstone wins: if either copy is tombstoned, result is tombstoned.
+     *
+     * Returns the merged card, or null if the remote was stale.
+     */
+    mergeCard(remote: KnowledgeCard): KnowledgeCard | null {
+        const local = this.cards.get(remote.id);
+
+        // Case 1: New card — accept remote entirely
+        if (!local) {
+            // Advance our HLC on receipt of remote clock
+            const mergedHlc = receiveHLC(
+                { wallTime: Date.now(), logical: 0, nodeId: this.identity.did },
+                remote.crdt.hlc
+            );
+            const card: KnowledgeCard = {
+                ...remote,
+                crdt: {
+                    ...remote.crdt,
+                    hlc: mergedHlc,
+                    vectorClock: { ...remote.crdt.vectorClock }
+                }
+            };
+            this.cards.set(card.id, card);
+            const space = this.spaces.get(card.spaceId);
+            if (space && !card.crdt.tombstone) {
+                space.cards.add(card.id);
+                space.stats.cardCount = space.cards.size;
+                space.stats.lastActivity = Date.now();
+            }
+            this.indexCard(card);
+            this.saveCard(card);
+            this.emit('card:merged', { card, action: 'new' });
+            return card;
+        }
+
+        // Case 2: Compare vector clocks
+        const order = compareVectorClocks(local.crdt.vectorClock, remote.crdt.vectorClock);
+
+        if (order === 'equal' || order === 'after') {
+            // Local is same or newer — discard remote
+            return null;
+        }
+
+        // Determine the winner for content (used when concurrent)
+        let winner: KnowledgeCard;
+        let action: string;
+
+        if (order === 'before') {
+            // Remote is strictly newer — accept remote content
+            winner = remote;
+            action = 'remote-wins';
+        } else {
+            // Concurrent — LWW tie-break on HLC
+            const hlcCmp = compareHLC(local.crdt.hlc, remote.crdt.hlc);
+            winner = hlcCmp >= 0 ? local : remote;
+            action = hlcCmp >= 0 ? 'local-wins-concurrent' : 'remote-wins-concurrent';
+        }
+
+        // Merge metadata regardless of content winner
+        const mergedVectorClock = mergeVectorClocks(
+            local.crdt.vectorClock,
+            remote.crdt.vectorClock
+        );
+        const mergedHlc = receiveHLC(local.crdt.hlc, remote.crdt.hlc);
+        // Tombstone wins: once deleted, stays deleted
+        const tombstone = local.crdt.tombstone || remote.crdt.tombstone;
+
+        // Build merged card
+        const merged: KnowledgeCard = {
+            ...winner,
+            crdt: {
+                hlc: mergedHlc,
+                vectorClock: mergedVectorClock,
+                tombstone
+            },
+            // Take the higher version
+            version: Math.max(local.version, remote.version),
+            // Merge usage counters (take max of each)
+            usage: {
+                views: Math.max(local.usage.views, remote.usage.views),
+                citations: Math.max(local.usage.citations, remote.usage.citations),
+                applications: Math.max(local.usage.applications, remote.usage.applications),
+                lastAccessed: Math.max(local.usage.lastAccessed, remote.usage.lastAccessed)
+            },
+            // Union verifications (deduplicate by verifier+timestamp)
+            verifications: this.mergeVerifications(local.verifications, remote.verifications)
+        };
+
+        // Update indexes
+        this.removeFromIndex(local);
+        this.cards.set(merged.id, merged);
+        if (!tombstone) {
+            this.indexCard(merged);
+        }
+
+        // Handle tombstone side effects
+        const space = this.spaces.get(merged.spaceId);
+        if (space) {
+            if (tombstone) {
+                space.cards.delete(merged.id);
+            } else {
+                space.cards.add(merged.id);
+            }
+            space.stats.cardCount = space.cards.size;
+        }
+
+        this.saveCard(merged);
+        this.emit('card:merged', { card: merged, action });
+        return merged;
+    }
+
+    /**
+     * Merge verification arrays, deduplicating by (verifier, timestamp).
+     */
+    private mergeVerifications(a: Verification[], b: Verification[]): Verification[] {
+        const seen = new Set<string>();
+        const merged: Verification[] = [];
+        for (const v of [...a, ...b]) {
+            const key = `${v.verifier}:${v.timestamp}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                merged.push(v);
+            }
+        }
+        return merged;
+    }
+
+    /**
+     * Serialize a card for network transmission (GossipSub).
+     */
+    serializeCard(card: KnowledgeCard): Uint8Array {
+        return new TextEncoder().encode(JSON.stringify(card));
+    }
+
+    /**
+     * Deserialize a card received from the network.
+     */
+    deserializeCard(data: Uint8Array): KnowledgeCard {
+        const raw = JSON.parse(new TextDecoder().decode(data));
+        return this.normalizeCard(raw);
+    }
+
+    /**
+     * Handle incoming knowledge sync message from GossipSub.
+     * Deserializes, merges, and emits sync events.
+     */
+    handleSyncMessage(data: Uint8Array, from: string): void {
+        try {
+            const remote = this.deserializeCard(data);
+            const result = this.mergeCard(remote);
+            if (result) {
+                this.emit('sync:merged', { card: result, from });
+            }
+        } catch (err) {
+            this.emit('sync:error', { error: err, from });
+        }
+    }
+
+    /**
+     * Get all cards that have been modified since a given timestamp.
+     * Used for anti-entropy sync (periodic full-state exchange).
+     */
+    getModifiedSince(since: number): KnowledgeCard[] {
+        return Array.from(this.cards.values())
+            .filter(c => c.updatedAt > since);
     }
 
     async linkCards(

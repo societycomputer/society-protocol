@@ -75,6 +75,20 @@ export interface TaskOutcome {
     timestamp: number;
 }
 
+/**
+ * Lightweight reputation observation for gossip propagation.
+ * One node's observation of another's performance — the unit of reputation gossip.
+ */
+export interface ReputationObservation {
+    subject: string;      // DID of the agent being observed
+    observer: string;     // DID of the observer
+    timestamp: number;
+    quality?: number;     // 0-1 quality score (if applicable)
+    delivered: boolean;   // Did the agent deliver?
+    onTime: boolean;      // Was it on time?
+    specialties?: string[];
+}
+
 // ─── Default Configuration ──────────────────────────────────────
 
 const DEFAULT_CONFIG: ReputationConfig = {
@@ -500,6 +514,89 @@ export class ReputationEngine extends EventEmitter {
             version: number;
         });
         this.emit('reputation:updated', score);
+    }
+
+    // ─── Gossip-Propagated Reputation Sync ──────────────────────────
+
+    /**
+     * Reputation observation for network propagation.
+     * Lightweight struct carrying a single peer's observation of another.
+     */
+    static serializeObservation(obs: ReputationObservation): Uint8Array {
+        return new TextEncoder().encode(JSON.stringify(obs));
+    }
+
+    static deserializeObservation(data: Uint8Array): ReputationObservation {
+        return JSON.parse(new TextDecoder().decode(data));
+    }
+
+    /**
+     * Create a reputation observation from a task outcome.
+     * This is the unit of gossip — a single observation, not a full score.
+     */
+    createObservation(outcome: TaskOutcome, observerDid: string): ReputationObservation {
+        return {
+            subject: outcome.did,
+            observer: observerDid,
+            timestamp: outcome.timestamp,
+            quality: outcome.quality_score ?? (outcome.status === 'completed' ? 0.7 : 0.0),
+            delivered: outcome.status === 'completed',
+            onTime: outcome.latency_ms <= outcome.lease_ms,
+            specialties: outcome.specialties_used,
+        };
+    }
+
+    /**
+     * Ingest a reputation observation received from the network.
+     * Validates the observation and integrates it into the local reputation store.
+     *
+     * Anti-gaming: observations are weighted by the observer's own reputation
+     * to reduce the impact of Sybil nodes (low-rep observers have diminished influence).
+     */
+    async ingestObservation(obs: ReputationObservation): Promise<boolean> {
+        // Ignore observations older than 30 days
+        const maxAge = 30 * 24 * 60 * 60 * 1000;
+        if (Date.now() - obs.timestamp > maxAge) return false;
+
+        // Ignore self-observations (no self-rating)
+        if (obs.subject === obs.observer) return false;
+
+        // Weight by observer reputation (Sybil dampening)
+        const observerRep = await this.getReputation(obs.observer);
+        const weight = Math.max(0.1, observerRep.overall); // Floor at 0.1 to not discard entirely
+
+        // Convert observation to a synthetic task outcome with reduced weight
+        const synthetic: TaskOutcome = {
+            did: obs.subject,
+            chain_id: `gossip_${obs.observer}_${obs.timestamp}`,
+            step_id: 'observation',
+            status: obs.delivered ? 'completed' : 'failed',
+            quality_score: obs.quality ? obs.quality * weight : undefined,
+            latency_ms: obs.onTime ? 1000 : 999999,
+            lease_ms: 30000,
+            accepted: true,
+            specialties_used: obs.specialties || [],
+            timestamp: obs.timestamp,
+        };
+
+        this.storage.saveTaskOutcome(synthetic);
+        this.dirtyDids.add(obs.subject);
+        this.emit('observation:ingested', { obs, weight });
+        return true;
+    }
+
+    /**
+     * Handle an incoming reputation gossip message from the network.
+     */
+    handleSyncMessage(data: Uint8Array, from: string): void {
+        try {
+            const obs = ReputationEngine.deserializeObservation(data);
+            this.ingestObservation(obs).catch(err => {
+                this.emit('sync:error', { error: err, from });
+            });
+        } catch (err) {
+            this.emit('sync:error', { error: err, from });
+        }
     }
 
     private startPeriodicSync(): void {

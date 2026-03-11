@@ -112,6 +112,76 @@ export function verify(
     return ed.verify(sig, msgBytes, publicKey);
 }
 
+// ─── Sybil Resistance: Proof-of-Work Identity ────────────────────
+
+/**
+ * Generate an identity with proof-of-work to resist Sybil attacks.
+ *
+ * The PoW requirement forces an attacker to spend O(2^difficulty) hash
+ * evaluations per identity, making mass DID creation economically infeasible.
+ *
+ * The proof is: SHA-512(did || nonce) must have `difficulty` leading zero bits.
+ * The nonce is stored alongside the identity for verification.
+ *
+ * @param displayName - Human-readable name for the identity
+ * @param difficulty - Number of leading zero bits required (default: 16 ≈ 65K hashes)
+ * @returns Identity with proof-of-work nonce
+ */
+export function generateIdentityWithPoW(
+    displayName: string,
+    difficulty: number = 16
+): Identity & { powNonce: number; powDifficulty: number } {
+    let nonce = 0;
+    let identity: Identity;
+
+    while (true) {
+        identity = generateIdentity(displayName);
+        const challenge = new TextEncoder().encode(`${identity.did}:${nonce}`);
+        const hash = sha512(challenge);
+
+        if (hasLeadingZeroBits(hash, difficulty)) {
+            return { ...identity, powNonce: nonce, powDifficulty: difficulty };
+        }
+
+        nonce++;
+        // Re-generate key every 1000 attempts for better entropy distribution
+        if (nonce % 1000 === 0) continue;
+    }
+}
+
+/**
+ * Verify a proof-of-work for a DID.
+ * Returns true if SHA-512(did || nonce) has the required leading zero bits.
+ */
+export function verifyIdentityPoW(
+    did: string,
+    nonce: number,
+    difficulty: number
+): boolean {
+    const challenge = new TextEncoder().encode(`${did}:${nonce}`);
+    const hash = sha512(challenge);
+    return hasLeadingZeroBits(hash, difficulty);
+}
+
+/**
+ * Check if a hash has at least `bits` leading zero bits.
+ */
+function hasLeadingZeroBits(hash: Uint8Array, bits: number): boolean {
+    let remaining = bits;
+    for (let i = 0; i < hash.length && remaining > 0; i++) {
+        if (remaining >= 8) {
+            if (hash[i] !== 0) return false;
+            remaining -= 8;
+        } else {
+            // Check the top `remaining` bits of this byte
+            const mask = (0xFF << (8 - remaining)) & 0xFF;
+            if ((hash[i] & mask) !== 0) return false;
+            remaining = 0;
+        }
+    }
+    return true;
+}
+
 /**
  * Extract public key bytes from a did:key string.
  */

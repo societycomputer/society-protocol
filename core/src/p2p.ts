@@ -65,6 +65,14 @@ export function capsuleTopic(roomId: string): string {
     return `${TOPIC_PREFIX}/capsule/${roomId}`;
 }
 
+export function knowledgeTopic(spaceId: string): string {
+    return `${TOPIC_PREFIX}/knowledge/${spaceId}`;
+}
+
+export function reputationTopic(roomId: string): string {
+    return `${TOPIC_PREFIX}/reputation/${roomId}`;
+}
+
 export function federationTopic(roomId: string): string {
     return `${TOPIC_PREFIX}/federation/${roomId}`;
 }
