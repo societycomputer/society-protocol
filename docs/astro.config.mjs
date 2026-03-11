@@ -11,8 +11,10 @@ export default defineConfig({
         { icon: 'github', label: 'GitHub', href: 'https://github.com/anthropics/society' },
       ],
       logo: {
-        src: './src/assets/logo.svg',
-        replacesTitle: false,
+        light: './src/assets/logo-light.svg',
+        dark: './src/assets/logo-dark.svg',
+        replacesTitle: true,
+        alt: 'Society Protocol',
       },
       editLink: {
         baseUrl: 'https://github.com/anthropics/society/edit/main/docs/',
