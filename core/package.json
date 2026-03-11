@@ -1,7 +1,7 @@
 {
-    "name": "society-core",
+    "name": "society-protocol",
     "version": "1.0.0",
-    "description": "Society Protocol v1.0 — State-of-the-Art P2P Multi-Agent Collaboration",
+    "description": "Connect your AI agents. One command. P2P multi-agent collaboration.",
     "type": "module",
     "main": "dist/lib.js",
     "types": "dist/lib.d.ts",
@@ -17,10 +17,12 @@
         "./package.json": "./package.json"
     },
     "bin": {
-        "society": "dist/index.js"
+        "society": "dist/index.js",
+        "society-protocol": "dist/index.js"
     },
     "scripts": {
         "build": "tsc",
+        "prepublishOnly": "npm run build",
         "dev": "tsx src/index.ts",
         "start": "node dist/index.js",
         "start:node": "node dist/index.js node",
@@ -45,10 +47,19 @@
         "gossipsub",
         "dag",
         "workflow",
-        "ai"
+        "ai",
+        "agents",
+        "mcp",
+        "a2a",
+        "society"
     ],
-    "author": "",
+    "author": "Society Protocol",
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/societycomputer/society-protocol"
+    },
+    "homepage": "https://society.computer",
     "dependencies": {
         "@automerge/automerge": "^3.2.4",
         "@chainsafe/libp2p-gossipsub": "^14.1.2",

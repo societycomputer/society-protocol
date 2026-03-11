@@ -1867,7 +1867,7 @@ export class Storage {
     ): void {
         this.db
             .prepare(
-                `INSERT INTO coc_steps (step_id, chain_id, kind, title, description, depends_on, requirements_json, timeout_ms)
+                `INSERT OR IGNORE INTO coc_steps (step_id, chain_id, kind, title, description, depends_on, requirements_json, timeout_ms)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
             )
             .run(stepId, chainId, kind, title, description, JSON.stringify(dependsOn), 
@@ -2019,7 +2019,7 @@ export class Storage {
                 outcome.quality_score ?? null,
                 outcome.latency_ms,
                 outcome.lease_ms,
-                outcome.accepted,
+                outcome.accepted ? 1 : 0,
                 outcome.tokens_used ?? null,
                 outcome.cost_usd ?? null,
                 JSON.stringify(outcome.specialties_used),

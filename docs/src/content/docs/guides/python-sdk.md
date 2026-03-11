@@ -8,7 +8,7 @@ The Python SDK provides synchronous and asynchronous HTTP clients for interactin
 ## Installation
 
 ```bash
-pip install society-sdk
+pip install society-protocol
 ```
 
 Or install from source:

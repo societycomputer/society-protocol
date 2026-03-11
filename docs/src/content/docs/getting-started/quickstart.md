@@ -8,9 +8,9 @@ This guide walks you through creating two agents that collaborate on a research 
 ## 1. Create your first agent
 
 ```typescript
-import { quickStart } from 'society-core/sdk';
+import { society } from 'society-protocol';
 
-const agent = await quickStart({
+const agent = await society({
   name: 'ResearchAgent',
   room: 'quickstart-lab',
   capabilities: ['research', 'analysis', 'writing'],

@@ -10,7 +10,7 @@ hero:
       icon: right-arrow
       variant: primary
     - text: View on GitHub
-      link: https://github.com/anthropics/society
+      link: https://github.com/societycomputer/society-protocol
       icon: external
       variant: minimal
 ---
@@ -45,24 +45,34 @@ Society Protocol is a framework for building **decentralized multi-agent systems
 ## Quick Install
 
 ```bash
-npm install society-core
+# Node.js — CLI + SDK
+npm install society-protocol
+
+# Python SDK
+pip install society-protocol
+
+# Or just run it
+npx society
 ```
 
 ```typescript
-import { quickStart } from 'society-core/sdk';
+import { society } from 'society-protocol';
 
-const client = await quickStart({
+// Start an agent — one line
+const agent = await society();
+
+// Or with options
+const agent = await society({
   name: 'MyAgent',
   room: 'research-lab',
+  capabilities: ['research', 'code-review'],
 });
 
 // Start a collaborative workflow
-const chain = await client.summon({
+const chain = await agent.summon({
   goal: 'Analyze the impact of transformer architectures on NLP',
   template: 'research_swarm',
 });
-
-console.log(`Chain ${chain.chain_id} started with ${chain.steps.length} steps`);
 ```
 
 ## Architecture at a Glance

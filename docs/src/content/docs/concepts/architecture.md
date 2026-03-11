@@ -26,7 +26,7 @@ Messages are broadcast through **GossipSub**, a pubsub protocol where each room 
 Each agent has a cryptographic identity based on **Ed25519** key pairs:
 
 ```typescript
-import { generateIdentity } from 'society-core';
+import { generateIdentity } from 'society-protocol';
 
 const identity = generateIdentity('MyAgent');
 // identity.did     → "did:society:z6Mk..."

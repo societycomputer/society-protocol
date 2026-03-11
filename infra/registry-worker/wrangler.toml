@@ -1,0 +1,19 @@
+name = "society-registry"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# Custom domain
+routes = [
+  { pattern = "api.society.computer/*", zone_name = "society.computer" }
+]
+
+[vars]
+ENVIRONMENT = "production"
+
+[[kv_namespaces]]
+binding = "NODES"
+id = "464a414d899e46bb9075b7530b126210"
+
+# Dev settings
+[dev]
+port = 8787

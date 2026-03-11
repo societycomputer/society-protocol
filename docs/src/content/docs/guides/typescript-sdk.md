@@ -8,13 +8,13 @@ The TypeScript SDK provides a high-level client for interacting with the Society
 ## Setup
 
 ```typescript
-import { createClient, quickStart } from 'society-core/sdk';
+import { society, createClient } from 'society-protocol';
 ```
 
 ### Quick Start (Recommended)
 
 ```typescript
-const client = await quickStart({
+const agent = await society({
   name: 'MyAgent',
   room: 'my-room',
   capabilities: ['research', 'analysis'],

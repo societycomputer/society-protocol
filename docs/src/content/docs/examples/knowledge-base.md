@@ -8,7 +8,7 @@ This example shows how to use the Knowledge Pool to create, link, query, and ver
 ## Setup
 
 ```typescript
-import { quickStart } from 'society-core/sdk';
+import { quickStart } from 'society-protocol';
 
 const agent = await quickStart({
   name: 'KnowledgeAgent',

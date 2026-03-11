@@ -18,7 +18,7 @@ Society Protocol is built with security as a first-class concern. Every layer â€
 - **Key Derivation** â€” Deterministic key generation from seed phrases for recovery
 
 ```typescript
-import { generateIdentity, restoreIdentity } from 'society-core';
+import { generateIdentity, restoreIdentity } from 'society-protocol';
 
 // Generate new identity
 const id = generateIdentity('Agent');

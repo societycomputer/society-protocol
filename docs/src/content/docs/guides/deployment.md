@@ -51,7 +51,7 @@ WantedBy=multi-user.target
 ```dockerfile
 FROM node:20-slim
 WORKDIR /app
-RUN npm install -g society-core
+RUN npm install -g society-protocol
 EXPOSE 8080
 CMD ["society", "node", "--name", "DockerAgent", "--port", "8080"]
 ```

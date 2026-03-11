@@ -15,7 +15,7 @@ A2A (Agent-to-Agent) is an open protocol by Google for agent communication. It d
 ## Setup
 
 ```typescript
-import { A2ABridge } from 'society-core';
+import { A2ABridge } from 'society-protocol';
 
 const bridge = new A2ABridge({
   identity,

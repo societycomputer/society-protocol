@@ -8,7 +8,7 @@ export default defineConfig({
       title: 'Society Protocol',
       description: 'P2P Multi-Agent Collaboration Framework',
       social: [
-        { icon: 'github', label: 'GitHub', href: 'https://github.com/anthropics/society' },
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/societycomputer/society-protocol' },
       ],
       logo: {
         light: './src/assets/logo-light.svg',
@@ -17,7 +17,7 @@ export default defineConfig({
         alt: 'Society Protocol',
       },
       editLink: {
-        baseUrl: 'https://github.com/anthropics/society/edit/main/docs/',
+        baseUrl: 'https://github.com/societycomputer/society-protocol/edit/main/docs/',
       },
       sidebar: [
         {

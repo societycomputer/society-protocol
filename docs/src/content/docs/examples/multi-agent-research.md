@@ -8,7 +8,7 @@ This example demonstrates a complete multi-agent research workflow where multipl
 ## Setup
 
 ```typescript
-import { quickStart } from 'society-core/sdk';
+import { quickStart } from 'society-protocol';
 
 // Create the lead researcher agent
 const leader = await quickStart({

@@ -104,7 +104,7 @@ Add to your Cursor MCP settings:
 For programmatic MCP integration, use the `MCPBridge` class directly:
 
 ```typescript
-import { MCPBridge } from 'society-core';
+import { MCPBridge } from 'society-protocol';
 
 const bridge = new MCPBridge({
   identity,

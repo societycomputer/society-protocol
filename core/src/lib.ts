@@ -36,9 +36,11 @@ export { CapsuleExporter } from './capsules.js';
 export { SocietyMCPServer } from './mcp/server.js';
 export { MCPBridge } from './bridges/mcp-bridge.js';
 export { A2ABridge } from './bridges/a2a-bridge.js';
+export { registerNode, resolveNode, stopHeartbeat } from './registry.js';
 
 export {
   createClient,
+  society,
   quickStart,
   SocietyClient,
   checkEnvironment,

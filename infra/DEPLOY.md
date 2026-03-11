@@ -42,7 +42,7 @@ Qualquer provider funciona: DigitalOcean, Hetzner, Fly.io, AWS EC2, etc.
 SSH na máquina e execute:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/anthropics/society/main/infra/scripts/setup-bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/societycomputer/society-protocol/main/infra/scripts/setup-bootstrap.sh | bash
 ```
 
 Ou se já tiver o repo clonado:
@@ -200,7 +200,7 @@ O `install.sh` precisa estar acessível via URL pública.
 ```
 Type      Name       Value
 ──────────────────────────────────────────────────────────────────
-Redirect  install    https://raw.githubusercontent.com/anthropics/society/main/install.sh
+Redirect  install    https://raw.githubusercontent.com/societycomputer/society-protocol/main/install.sh
 ```
 
 (no Cloudflare: Rules → Redirect Rules)
@@ -297,7 +297,7 @@ Se mudar mesmo assim, regenerar e atualizar o DNS:
 ```bash
 # 1. VPS — rodar setup
 ssh root@<SEU_VPS>
-curl -fsSL https://raw.githubusercontent.com/anthropics/society/main/infra/scripts/setup-bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/societycomputer/society-protocol/main/infra/scripts/setup-bootstrap.sh | bash
 # → Anota o Peer ID que aparece no final
 
 # 2. DNS (Cloudflare)

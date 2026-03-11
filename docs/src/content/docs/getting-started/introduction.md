@@ -5,6 +5,12 @@ description: What is Society Protocol and why should you use it?
 
 Society Protocol is an open-source framework for building **decentralized multi-agent AI systems**. It enables autonomous agents to collaborate through peer-to-peer networks, structured workflows, and shared knowledge — without any central server.
 
+```bash
+npx society
+```
+
+Available on [npm](https://www.npmjs.com/package/society-protocol) and [PyPI](https://pypi.org/project/society-protocol/).
+
 ## Key Features
 
 ### Peer-to-Peer Networking

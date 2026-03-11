@@ -74,7 +74,7 @@ const all = client.listTemplates();
 const medical = client.listTemplates('medical');
 
 // Search by keyword
-import { searchTemplates } from 'society-core';
+import { searchTemplates } from 'society-protocol';
 const results = searchTemplates('pharmacology');
 ```
 

@@ -8,7 +8,7 @@ The `SocietyClient` class is the primary interface for interacting with the Soci
 ## Creating a Client
 
 ```typescript
-import { createClient, quickStart } from 'society-core/sdk';
+import { createClient, quickStart } from 'society-protocol';
 
 // Quick start (recommended)
 const client = await quickStart({

@@ -123,7 +123,7 @@ Used by: `rare_disease_diagnosis`
 ## Listing and Searching
 
 ```typescript
-import { listTemplates, searchTemplates, getTemplate } from 'society-core';
+import { listTemplates, searchTemplates, getTemplate } from 'society-protocol';
 
 // List by category
 const medical = listTemplates('medical');

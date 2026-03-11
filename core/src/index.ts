@@ -54,22 +54,304 @@ import { IntegrationEngine } from './integration.js';
 import { PersonaVaultEngine } from './persona/index.js';
 import { ProactiveMissionEngine } from './proactive/engine.js';
 import type { SwpEnvelope, ChatMsgBody, CocDagNode, Artifact } from './swp.js';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { resolve } from 'path';
 import { realpathSync } from 'fs';
 import { createClient } from './sdk/client.js';
+import { registerNode, resolveNode, stopHeartbeat } from './registry.js';
+
+// ─── Invite Code Helpers ─────────────────────────────────────────
+// Encode a multiaddr + room into a short invite code: base64url
+function encodeInvite(multiaddr: string, room: string): string {
+    const payload = JSON.stringify({ a: multiaddr, r: room });
+    return Buffer.from(payload).toString('base64url');
+}
+
+function decodeInvite(code: string): { multiaddr: string; room: string } | null {
+    try {
+        const payload = JSON.parse(Buffer.from(code, 'base64url').toString('utf-8'));
+        if (payload.a) return { multiaddr: payload.a, room: payload.r || 'lobby' };
+    } catch { /* not a valid invite code */ }
+    return null;
+}
 
 const program = new Command();
 
 program
     .name('society')
-    .description('Society Protocol — P2P Multi-Agent Collaboration Node v1.0')
+    .description('Society Protocol — Connect your AI agents')
     .version('1.0.0');
 
+// ─── DEFAULT ACTION (npx society) ────────────────────────────────
+// Running `npx society` with no subcommand starts a node instantly
+program
+    .argument('[name]', 'agent display name')
+    .option('-r, --room <room>', 'room to join', 'lobby')
+    .option('-b, --bootstrap <addrs...>', 'connect to remote network')
+    .option('-p, --port <port>', 'listen port', '0')
+    .option('--relay', 'expose as public relay (requires cloudflared)')
+    .option('--debug', 'enable debug logging')
+    .action(async (name, options) => {
+        if (name && !program.args.includes('node') && !program.args.includes('init') &&
+            !program.args.includes('join') && !program.args.includes('invite') &&
+            !program.args.includes('status') && !program.args.includes('dashboard') &&
+            !program.args.includes('mission') && !program.args.includes('swarm') &&
+            !program.args.includes('worker') && !program.args.includes('mcp')) {
+            await startNode({
+                name: name || 'Agent',
+                room: options.room,
+                port: options.port || '0',
+                bootstrap: options.bootstrap,
+                relay: options.relay,
+                gossipsub: true,
+                dht: true,
+                missionLeader: false,
+                provider: 'openai',
+                debug: options.debug,
+            });
+        }
+    });
+
+// ─── JOIN COMMAND ────────────────────────────────────────────────
+// society join <invite-code-or-multiaddr>
+program
+    .command('join <code>')
+    .description('Join a friend\'s network')
+    .option('-n, --name <name>', 'your agent name')
+    .option('-r, --room <room>', 'room to join')
+    .action(async (code, options) => {
+        const name = options.name || `Agent-${Math.random().toString(36).slice(2, 6)}`;
+
+        console.log('');
+        console.log(`  ${bold('Society Protocol')} — Joining network...`);
+        console.log('');
+
+        let bootstrapAddr: string | undefined;
+        let room = options.room || 'lobby';
+
+        if (code.startsWith('/')) {
+            // Raw multiaddr
+            bootstrapAddr = code;
+            console.log(`  Connecting to: ${dim(code.slice(0, 60))}...`);
+        } else {
+            // Try invite code first
+            const decoded = decodeInvite(code);
+            if (decoded) {
+                bootstrapAddr = decoded.multiaddr;
+                if (!options.room) room = decoded.room;
+                console.log(`  Invite accepted! Joining room ${cyan(room)}...`);
+            } else {
+                // Try resolving as a name from the registry
+                console.log(`  Looking up ${bold(code)} in registry...`);
+                const resolved = await resolveNode(code);
+                if (resolved) {
+                    bootstrapAddr = resolved.multiaddr;
+                    if (!options.room) room = resolved.room;
+                    console.log(`  Found ${bold(code)}! Joining room ${cyan(room)}...`);
+                } else {
+                    console.error(red(`  Could not find "${code}".`));
+                    console.log(`  ${dim('Try an invite code or multiaddr instead.')}`);
+                    process.exit(1);
+                }
+            }
+        }
+
+        await startNode({
+            name,
+            room,
+            port: '0',
+            bootstrap: bootstrapAddr ? [bootstrapAddr] : undefined,
+            gossipsub: true,
+            dht: true,
+            missionLeader: false,
+            provider: 'openai',
+            debug: false,
+        });
+    });
+
+// ─── INVITE COMMAND ─────────────────────────────────────────────
+// society invite → generate a shareable invite code
+program
+    .command('invite')
+    .description('Generate an invite for others to join your network')
+    .option('-n, --name <name>', 'register a friendly name (e.g. "alice")')
+    .option('-r, --room <room>', 'room to invite to', 'lobby')
+    .option('-p, --port <port>', 'P2P listen port', '4001')
+    .option('--relay', 'create a public relay so friends can join from anywhere')
+    .action(async (options) => {
+        console.log('');
+        console.log(`  ${bold('Society Protocol')} — Generating invite...`);
+        console.log(`  ${dim('Your node must stay running for others to connect.')}`);
+        console.log('');
+
+        const port = parseInt(options.port, 10);
+        const nodeName = options.name || 'Host';
+        const client = await createClient({
+            identity: { name: nodeName },
+            network: {
+                port,
+                enableGossipsub: true,
+                enableDht: true,
+            },
+        });
+
+        await client.joinRoom(options.room);
+        const peerId = client.getPeerId()!;
+
+        // Local invite (LAN)
+        const localMultiaddr = `/ip4/127.0.0.1/tcp/${port}/p2p/${peerId}`;
+        const localCode = encodeInvite(localMultiaddr, options.room);
+
+        console.log(`  ${green('Node running!')} Room: ${cyan(options.room)}`);
+        console.log('');
+        console.log(`  ${bold('Share with friends on same network:')}`);
+        console.log('');
+        console.log(`    ${bold(cyan(`npx society join ${localCode}`))}`);
+        console.log('');
+
+        // Register friendly name if provided
+        if (options.name) {
+            const registered = await registerNode(options.name, {
+                multiaddr: localMultiaddr,
+                room: options.room,
+                peerId,
+                name: options.name,
+            });
+            if (registered) {
+                console.log(`  ${green('Registered!')} Friends can also join with:`);
+                console.log('');
+                console.log(`    ${bold(cyan(`npx society join ${options.name}`))}`);
+                console.log('');
+            }
+        }
+
+        // If --relay, spawn cloudflared for a public URL
+        if (options.relay) {
+            const wsPort = port + 1;
+            console.log(`  ${dim('Starting public relay...')}`);
+
+            if (!isCommandAvailable('cloudflared')) {
+                console.log(`  ${yellow('cloudflared not found.')} Installing...`);
+                await installCloudflared();
+            }
+
+            if (isCommandAvailable('cloudflared')) {
+                const cfProc = spawn('cloudflared', ['tunnel', '--url', `http://localhost:${wsPort}`]);
+
+                cfProc.stderr?.on('data', (data: Buffer) => {
+                    const str = data.toString();
+                    const match = str.match(/(https:\/\/[a-z0-9-]+\.trycloudflare\.com)/);
+                    if (match) {
+                        const host = match[1].replace('https://', '');
+                        const publicMultiaddr = `/dns4/${host}/tcp/443/wss/p2p/${peerId}`;
+                        const publicCode = encodeInvite(publicMultiaddr, options.room);
+
+                        console.log(`  ${bold(green('Public relay active!'))}`);
+                        console.log('');
+                        console.log(`  ${bold('Share with anyone:')}`);
+                        console.log('');
+                        console.log(`    ${bold(cyan(`npx society join ${publicCode}`))}`);
+
+                        // Update registry with public multiaddr
+                        if (options.name) {
+                            registerNode(options.name, {
+                                multiaddr: publicMultiaddr,
+                                room: options.room,
+                                peerId,
+                                name: options.name,
+                            }).then(ok => {
+                                if (ok) {
+                                    console.log(`    ${bold(cyan(`npx society join ${options.name}`))}`);
+                                }
+                                console.log('');
+                            });
+                        } else {
+                            console.log('');
+                        }
+                    }
+                });
+
+                process.on('SIGINT', () => { cfProc.kill(); });
+            } else {
+                console.log(`  ${yellow('Could not start relay.')} Share the local code above for LAN access.`);
+            }
+        } else {
+            console.log(`  ${dim('For remote access, add')} ${cyan('--relay')} ${dim('to get a public invite code.')}`);
+            console.log('');
+        }
+
+        // Keep running
+        process.on('SIGINT', async () => {
+            stopHeartbeat();
+            await client.disconnect();
+            process.exit(0);
+        });
+        process.stdin.resume();
+    });
+
+// ─── STATUS COMMAND ─────────────────────────────────────────────
+// society status → show current state
+program
+    .command('status')
+    .description('Show the status of your Society node')
+    .option('--db <path>', 'SQLite database path')
+    .action(async (options) => {
+        const storage = new Storage(options.db ? { dbPath: options.db } : undefined);
+
+        console.log('');
+        console.log(`  ${bold('Society Protocol')} — Status`);
+        console.log('');
+
+        const identity = storage.getIdentity();
+        if (identity) {
+            console.log(`  Identity: ${bold(identity.display_name)} (${identity.did.slice(0, 24)}...)`);
+        } else {
+            console.log(`  Identity: ${dim('Not initialized yet. Run:')} ${cyan('npx society')}`);
+        }
+
+        const rooms = storage.query('SELECT DISTINCT room_id FROM rooms') as any[];
+        if (rooms.length > 0) {
+            console.log(`  Rooms:    ${rooms.map((r: any) => r.room_id).join(', ')}`);
+        }
+
+        const chains = storage.query('SELECT COUNT(*) as count FROM chains') as any[];
+        console.log(`  Chains:   ${chains[0]?.count || 0} total`);
+
+        const steps = storage.query("SELECT COUNT(*) as count FROM steps WHERE status = 'completed'") as any[];
+        console.log(`  Steps:    ${steps[0]?.count || 0} completed`);
+
+        console.log('');
+
+        storage.close();
+    });
+
+// ─── MCP COMMAND ─────────────────────────────────────────────────
+program
+    .command('mcp')
+    .description('Start MCP server for Claude, Cursor, Windsurf')
+    .option('-n, --name <name>', 'agent name', process.env.SOCIETY_IDENTITY_NAME || 'MCP-Agent')
+    .option('-r, --room <room>', 'default room', 'lobby')
+    .option('-b, --bootstrap <addrs...>', 'bootstrap multiaddrs')
+    .action(async (options) => {
+        const client = await createClient({
+            identity: { name: options.name },
+            network: {
+                bootstrap: options.bootstrap,
+                enableGossipsub: true,
+                enableDht: true,
+            },
+        });
+        await client.joinRoom(options.room);
+        const { SocietyMCPServer } = await import('./mcp/server.js');
+        const server = new SocietyMCPServer({ client });
+        await server.run();
+    });
+
+// ─── NODE COMMAND (power user) ──────────────────────────────────
 program
     .command('node')
-    .description('Start a Society node')
+    .description('Start a Society node (advanced options)')
     .option('-n, --name <name>', 'display name', 'Agent')
     .option('-r, --room <room>', 'room ID to join', 'lobby')
     .option('-p, --port <port>', 'listen port (0 = random)', '0')
@@ -98,6 +380,35 @@ program
     .option('--template <name>', 'Default template for /summon')
     .action(async (options) => {
         await runInitWizard(options);
+    });
+
+program
+    .command('dashboard')
+    .description('Launch the Society Dashboard — visual mission control')
+    .option('-p, --port <port>', 'Dashboard server port', '4200')
+    .option('-n, --name <name>', 'Agent display name', 'Dashboard')
+    .option('-r, --room <room>', 'Initial room to join', 'lobby')
+    .option('-b, --bootstrap <addrs...>', 'Bootstrap peer addresses')
+    .option('--connect <url>', 'Connect to existing Society node (remote mode)')
+    .option('--p2p-port <port>', 'P2P listening port')
+    .action(async (opts) => {
+        try {
+            const dashboardPath = resolve(
+                realpathSync(fileURLToPath(import.meta.url)),
+                '../../../dashboard/src/server/index.ts'
+            );
+            const args = ['tsx', dashboardPath, '--port', opts.port, '--name', opts.name, '--room', opts.room];
+            if (opts.bootstrap) opts.bootstrap.forEach((b: string) => args.push('--bootstrap', b));
+            if (opts.connect) args.push('--connect', opts.connect);
+            if (opts.p2pPort) args.push('--p2p-port', opts.p2pPort);
+            const child = spawn('npx', args, { stdio: 'inherit', cwd: resolve(realpathSync(fileURLToPath(import.meta.url)), '../../../dashboard') });
+            child.on('error', (err) => { console.error('Failed to start dashboard:', err.message); process.exit(1); });
+            child.on('exit', (code) => process.exit(code || 0));
+        } catch (err: any) {
+            console.error('Dashboard not found. Run from the society repo root or install society-dashboard.');
+            console.error(err.message);
+            process.exit(1);
+        }
     });
 
 const mission = program.command('mission').description('Manage proactive research missions');
@@ -784,6 +1095,18 @@ async function startNode(options: NodeOptions) {
         if (wsPort === 0) {
             console.warn(yellow('  [warn] --relay requires a fixed --port. Ignoring relay.'));
         } else {
+            // Auto-install cloudflared if missing
+            if (!isCommandAvailable('cloudflared')) {
+                console.log(`  ${yellow('cloudflared not found.')} Installing automatically...`);
+                if (!await installCloudflared()) {
+                    console.warn(yellow('  [warn] Failed to install cloudflared. Skipping relay.'));
+                }
+            }
+
+            if (!isCommandAvailable('cloudflared')) {
+                console.warn(yellow('  [warn] cloudflared still not available. Skipping relay.'));
+            } else {
+
             console.log(`  ${dim('🌐')} Spawning cloudflared relay to localhost:${wsPort}...`);
             cloudflaredProc = spawn('cloudflared', ['tunnel', '--url', `http://localhost:${wsPort}`]);
 
@@ -793,12 +1116,28 @@ async function startNode(options: NodeOptions) {
                 if (match) {
                     process.stdout.write('\r\x1b[K');
                     const host = match[1].replace('https://', '');
-                    const multiaddr = `/dns4/${host}/tcp/443/wss/p2p/${p2p.getPeerId()}`;
-                    console.log(`\n  ${bold(green('🌐 Relay Active!'))} Share this bootstrap command:`);
-                    console.log(`  ${cyan(`society node --bootstrap ${multiaddr}`)}\n`);
-                    rl.prompt(true);
+                    const relayMultiaddr = `/dns4/${host}/tcp/443/wss/p2p/${p2p.getPeerId()}`;
+                    const code = encodeInvite(relayMultiaddr, options.room);
+                    console.log(`\n  ${bold(green('Relay active!'))} Share this with anyone:`);
+                    console.log(`  ${cyan(`npx society join ${code}`)}`);
+
+                    // Register name in registry
+                    registerNode(options.name, {
+                        multiaddr: relayMultiaddr,
+                        room: options.room,
+                        peerId: p2p.getPeerId()!,
+                        name: options.name,
+                    }).then(ok => {
+                        if (ok) {
+                            console.log(`  ${cyan(`npx society join ${options.name}`)}`);
+                        }
+                        console.log('');
+                        rl.prompt(true);
+                    });
+
                 }
             });
+            } // end cloudflared available check
         }
     }
 
@@ -846,6 +1185,7 @@ async function startNode(options: NodeOptions) {
         if (cloudflaredProc) {
             cloudflaredProc.kill();
         }
+        stopHeartbeat();
         proactiveLeader?.destroy();
         skills.stop();
         adapterHost.stop();
@@ -1375,3 +1715,63 @@ function green(s: string): string { return `\x1b[32m${s}\x1b[39m`; }
 function yellow(s: string): string { return `\x1b[33m${s}\x1b[39m`; }
 function red(s: string): string { return `\x1b[31m${s}\x1b[39m`; }
 function blue(s: string): string { return `\x1b[34m${s}\x1b[39m`; }
+
+// ─── Cloudflared Auto-Install ────────────────────────────────────
+
+function isCommandAvailable(cmd: string): boolean {
+    try {
+        execSync(`command -v ${cmd}`, { stdio: 'ignore' });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function installCloudflared(): Promise<boolean> {
+    const os = process.platform;
+    const arch = process.arch;
+
+    try {
+        if (os === 'darwin') {
+            // macOS — try Homebrew first
+            if (isCommandAvailable('brew')) {
+                console.log(`  ${dim('  brew install cloudflare/cloudflare/cloudflared')}`);
+                execSync('brew install cloudflare/cloudflare/cloudflared', { stdio: 'inherit' });
+                return true;
+            }
+        }
+
+        if (os === 'linux') {
+            // Linux — download binary directly
+            const archMap: Record<string, string> = {
+                'x64': 'amd64',
+                'arm64': 'arm64',
+                'arm': 'arm',
+            };
+            const cfArch = archMap[arch] || 'amd64';
+            const url = `https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${cfArch}`;
+            const dest = '/usr/local/bin/cloudflared';
+
+            console.log(`  ${dim(`  Downloading cloudflared for linux-${cfArch}...`)}`);
+
+            if (isCommandAvailable('curl')) {
+                execSync(`curl -fsSL "${url}" -o /tmp/cloudflared && chmod +x /tmp/cloudflared && sudo mv /tmp/cloudflared ${dest}`, { stdio: 'inherit' });
+            } else if (isCommandAvailable('wget')) {
+                execSync(`wget -q "${url}" -O /tmp/cloudflared && chmod +x /tmp/cloudflared && sudo mv /tmp/cloudflared ${dest}`, { stdio: 'inherit' });
+            } else {
+                console.error(red('  Neither curl nor wget found. Cannot download cloudflared.'));
+                return false;
+            }
+            return true;
+        }
+
+        // Windows or unsupported
+        console.log(yellow(`  Auto-install not supported on ${os}. Install manually:`));
+        console.log(dim('  https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/'));
+        return false;
+    } catch (err) {
+        console.error(red(`  Failed to install cloudflared: ${(err as Error).message}`));
+        console.log(dim('  Install manually: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/'));
+        return false;
+    }
+}

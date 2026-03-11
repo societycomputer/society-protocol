@@ -9,8 +9,10 @@
 export {
     SocietyClient,
     createClient,
+    society,
     useSociety,
     type SDKConfig,
+    type SimpleConfig,
     type SummonOptions,
     type StepInfo,
     type ChainInfo,

@@ -713,7 +713,7 @@ export class P2PNode extends EventEmitter {
         }
         this.subscribedTopics.clear();
 
-        await this.node.stop();
+        await this.node?.stop();
         console.log('[p2p] Node stopped.');
     }
 }

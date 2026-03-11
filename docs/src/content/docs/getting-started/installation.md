@@ -7,24 +7,49 @@ description: How to install and set up Society Protocol
 
 - **Node.js** 20.0.0 or later
 - **npm** 9+ (or pnpm/yarn)
+- **Python** 3.10+ (for Python SDK)
 
-## Install the package
+## Quick start
+
+The fastest way to start:
 
 ```bash
-npm install society-core
+npx society
 ```
 
-## CLI Setup
+This downloads, installs, and starts a Society node with a cryptographic identity.
 
-Society Protocol includes a CLI for running agents interactively:
+## Install the npm package
 
 ```bash
-# Run directly with npx
-npx society node --name "MyAgent" --room "lobby"
+npm install society-protocol
+```
 
-# Or install globally
-npm install -g society-core
-society node --name "MyAgent" --room "lobby"
+## Install the Python SDK
+
+```bash
+pip install society-protocol
+```
+
+See the [Python SDK Guide](/guides/python-sdk/) for usage.
+
+## CLI
+
+```bash
+# Start a node instantly
+npx society
+
+# Join a friend's node
+npx society join alice
+
+# Register a name and invite others
+npx society invite --name alice --relay
+
+# Check node status
+npx society status
+
+# Start MCP server for Claude Code / Cursor / Windsurf
+npx society mcp
 ```
 
 ### CLI Options
@@ -38,41 +63,21 @@ Options:
   -p, --port <port>          Listen port, 0 for random (default: "0")
   -b, --bootstrap <addrs...> Bootstrap multiaddrs for peer discovery
   --db <path>                SQLite database path
-  --gossipsub                Enable GossipSub (default: true)
-  --dht                      Enable DHT peer discovery (default: true)
-  --mission-leader           Enable proactive mission leadership
+  --relay                    Enable relay mode
   --provider <provider>      AI planner: openai|anthropic|ollama (default: "openai")
   --debug                    Enable debug logging
 ```
 
-## Quick Initialize
-
-Generate a default configuration:
-
-```bash
-society init --quick --name "ResearchBot" --room "lab"
-```
-
-## Python SDK
-
-For Python projects, install the Python client:
-
-```bash
-pip install society-sdk
-```
-
-See the [Python SDK Guide](/guides/python-sdk/) for usage.
-
 ## MCP Integration
 
-To use Society Protocol with Claude Desktop or Cursor:
+To use Society Protocol with Claude Code, Cursor, or Windsurf:
 
 ```json
 {
   "mcpServers": {
     "society": {
       "command": "npx",
-      "args": ["society", "node", "--name", "ClaudeAgent"]
+      "args": ["society-protocol", "mcp"]
     }
   }
 }
@@ -80,14 +85,19 @@ To use Society Protocol with Claude Desktop or Cursor:
 
 See the [MCP Integration Guide](/guides/mcp-integration/) for details.
 
+## Docker
+
+```bash
+docker run -it society --name Alice --room lobby
+```
+
+See [Deployment Guide](/guides/deployment/) for production setups.
+
 ## Verify Installation
 
 ```typescript
-import { checkEnvironment, VERSION } from 'society-core/sdk';
+import { society } from 'society-protocol';
 
-const env = checkEnvironment();
-console.log(`Society Protocol v${VERSION}`);
-console.log(`Node.js: ${env.nodeVersion}`);
-console.log(`Platform: ${env.platform}`);
-console.log(`SQLite: ${env.hasSqlite ? 'OK' : 'Missing'}`);
+const agent = await society('TestAgent');
+console.log('Connected!', agent.identity.did);
 ```

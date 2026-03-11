@@ -8,7 +8,7 @@ This example shows how to use the `second_opinion` template for a structured med
 ## Setup
 
 ```typescript
-import { quickStart } from 'society-core/sdk';
+import { quickStart } from 'society-protocol';
 
 const agent = await quickStart({
   name: 'MedicalReviewer',

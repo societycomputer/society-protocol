@@ -92,7 +92,7 @@ The auto-configurator selects the best storage location by free space:
 ## SDK Configuration
 
 ```typescript
-import { createClient } from 'society-core/sdk';
+import { createClient } from 'society-protocol';
 
 const client = createClient({
   // Required

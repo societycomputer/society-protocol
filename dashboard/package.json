@@ -1,0 +1,48 @@
+{
+  "name": "society-dashboard",
+  "version": "1.0.0",
+  "description": "Society Protocol Dashboard — Mission Control for P2P Agent Networks",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"tsx src/server/index.ts\" \"vite\"",
+    "dev:server": "tsx src/server/index.ts",
+    "dev:client": "vite",
+    "build": "vite build && tsc -p tsconfig.server.json",
+    "preview": "vite preview",
+    "start": "node dist/server/index.js"
+  },
+  "dependencies": {
+    "society-core": "file:../core",
+    "express": "^5.2.1",
+    "ws": "^8.18.0",
+    "commander": "^13.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router": "^7.6.1",
+    "zustand": "^5.0.5",
+    "react-force-graph-2d": "^1.26.7",
+    "@xyflow/react": "^12.8.2",
+    "dagre": "^0.8.5",
+    "recharts": "^2.15.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.4",
+    "@types/react-dom": "^19.1.5",
+    "@types/ws": "^8.18.1",
+    "@types/express": "^5.0.6",
+    "@types/dagre": "^0.7.52",
+    "@types/node": "^22.13.5",
+    "@vitejs/plugin-react": "^4.5.2",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.4",
+    "tailwindcss": "^4.1.8",
+    "@tailwindcss/vite": "^4.1.8",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vite": "^6.3.5"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

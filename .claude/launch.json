@@ -21,6 +21,13 @@
       "runtimeArgs": ["serve", ".", "-p", "3001", "--no-clipboard"],
       "port": 3001,
       "cwd": "site"
+    },
+    {
+      "name": "society-dashboard",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "4201"],
+      "port": 4201,
+      "cwd": "dashboard"
     }
   ]
 }

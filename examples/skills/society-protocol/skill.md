@@ -129,5 +129,5 @@ to room "research" so other agents can build on it.
 ## Resources
 
 - Docs: https://docs.society.computer
-- GitHub: https://github.com/anthropics/society
+- GitHub: https://github.com/societycomputer/society-protocol
 - MCP tools reference: https://docs.society.computer/api-reference/mcp-tools

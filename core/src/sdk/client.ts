@@ -676,6 +676,89 @@ export class SocietyClient extends EventEmitter {
         return this.rooms.getVisibleWorkers(roomId) as SwarmWorkerProfile[];
     }
 
+    // ─── Federation ─────────────────────────────────────────────
+
+    async createFederation(
+        name: string,
+        description: string,
+        visibility: 'public' | 'private' | 'invite-only' = 'private',
+    ): Promise<any> {
+        this.ensureConnected();
+        return this.federation.createFederation(name, description, visibility);
+    }
+
+    listFederations(): any[] {
+        this.ensureConnected();
+        return this.federation.getMemberFederations(this.identity.did);
+    }
+
+    getFederation(federationId: string): any {
+        this.ensureConnected();
+        return this.federation.getFederation(federationId);
+    }
+
+    async joinFederation(federationId: string): Promise<boolean> {
+        this.ensureConnected();
+        return this.federation.joinFederation(
+            federationId,
+            this.identity.did,
+            this.identity.displayName,
+        );
+    }
+
+    // ─── Knowledge ──────────────────────────────────────────────
+
+    async createKnowledgeSpace(
+        name: string,
+        description: string,
+        type: 'personal' | 'team' | 'federation' | 'public' = 'team',
+    ): Promise<any> {
+        this.ensureConnected();
+        return this.knowledge.createSpace(name, description, type);
+    }
+
+    async createKnowledgeCard(
+        spaceId: string,
+        type: string,
+        title: string,
+        content: string,
+        options?: {
+            summary?: string;
+            tags?: string[];
+            domain?: string[];
+            confidence?: number;
+        },
+    ): Promise<any> {
+        this.ensureConnected();
+        return this.knowledge.createCard(spaceId, type as any, title, content, options);
+    }
+
+    queryKnowledgeCards(options: {
+        spaceId?: string;
+        type?: string;
+        tags?: string[];
+        query?: string;
+        limit?: number;
+    }): any[] {
+        this.ensureConnected();
+        return this.knowledge.queryCards(options as any);
+    }
+
+    getKnowledgeGraph(spaceId: string): any {
+        this.ensureConnected();
+        return this.knowledge.getKnowledgeGraph(spaceId);
+    }
+
+    async linkKnowledgeCards(
+        sourceId: string,
+        targetId: string,
+        type: string,
+        strength?: number,
+    ): Promise<any> {
+        this.ensureConnected();
+        return this.knowledge.linkCards(sourceId, targetId, type as any, strength);
+    }
+
     // ─── Federation Mesh ─────────────────────────────────────────
 
     async createPeering(
@@ -1567,6 +1650,76 @@ export class SocietyClient extends EventEmitter {
 export async function createClient(config?: SDKConfig): Promise<SocietyClient> {
     const client = new SocietyClient(config);
     await client.connect();
+    return client;
+}
+
+// ─── Simple Entry Point (Progressive Disclosure) ────────────────
+//
+// Inspired by Tailscale's simplicity and SwiftUI's progressive disclosure.
+// The simplest possible way to join the Society network.
+//
+// Level 1: const agent = await society()
+// Level 2: const agent = await society({ name: 'Alice' })
+// Level 3: const agent = await society({ name: 'Alice', room: 'research' })
+// Level 4: const agent = await society({ name: 'Alice', join: 'ABC-123-XYZ' })
+// Level 5: Full SDKConfig via createClient()
+
+export interface SimpleConfig {
+    /** Display name for your agent */
+    name?: string;
+    /** Room to auto-join (default: 'lobby') */
+    room?: string;
+    /** Invite code to join a friend's network */
+    join?: string;
+    /** Bootstrap address to connect to a remote network */
+    connect?: string;
+    /** Capabilities this agent offers */
+    capabilities?: string[];
+}
+
+export async function society(config?: SimpleConfig | string): Promise<SocietyClient> {
+    // Allow: society('Alice') as shorthand
+    const opts: SimpleConfig = typeof config === 'string'
+        ? { name: config }
+        : config || {};
+
+    const name = opts.name || `Agent-${Math.random().toString(36).slice(2, 6)}`;
+    const room = opts.room || 'lobby';
+
+    const sdkConfig: SDKConfig = {
+        identity: { name },
+        network: {
+            enableGossipsub: true,
+            enableDht: true,
+        },
+    };
+
+    // If connecting to a remote network
+    if (opts.connect) {
+        sdkConfig.network!.bootstrap = [opts.connect];
+    }
+
+    const client = await createClient(sdkConfig);
+    await client.joinRoom(room);
+
+    // If capabilities are provided, announce as worker
+    if (opts.capabilities?.length) {
+        const peerId = client.getPeerId();
+        await client.announceWorker(room, {
+            owner_did: client.getIdentity().did,
+            room_id: room,
+            adapter_id: `adapter_${peerId?.slice(-8) || 'local'}`,
+            runtime: 'custom',
+            display_name: name,
+            specialties: opts.capabilities,
+            kinds: ['execute'],
+            max_concurrency: 1,
+            version: '1.0.0',
+            endpoint: '',
+            auth_type: 'none',
+        });
+    }
+
     return client;
 }
 

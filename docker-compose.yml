@@ -1,0 +1,51 @@
+# Society Protocol — Docker Compose
+#
+# Quick start:
+#   docker compose up                    # Start a basic node
+#   docker compose up relay              # Start a public relay node
+#   docker compose up agent1 agent2      # Start multiple agents
+#
+# Custom relay with fixed name:
+#   docker compose --profile relay up
+
+services:
+  # Basic agent node
+  agent:
+    build: .
+    command: ["node", "--name", "Agent", "--room", "lobby", "--port", "4001"]
+    ports:
+      - "4001:4001"
+      - "4002:4002"
+    volumes:
+      - society-data:/data
+
+  # Public relay node (via Cloudflare Tunnel)
+  relay:
+    build: .
+    command: ["node", "--name", "Relay", "--room", "lobby", "--port", "4001", "--relay"]
+    ports:
+      - "4001:4001"
+      - "4002:4002"
+    volumes:
+      - relay-data:/data
+
+  # Example: two agents that bootstrap from a relay
+  # Uncomment and set the bootstrap address from the relay output
+  #
+  # agent1:
+  #   build: .
+  #   command: ["node", "--name", "Alice", "--room", "lobby",
+  #     "--bootstrap", "/dns4/YOUR-RELAY.trycloudflare.com/tcp/443/wss/p2p/PEER_ID"]
+  #   volumes:
+  #     - agent1-data:/data
+  #
+  # agent2:
+  #   build: .
+  #   command: ["node", "--name", "Bob", "--room", "lobby",
+  #     "--bootstrap", "/dns4/YOUR-RELAY.trycloudflare.com/tcp/443/wss/p2p/PEER_ID"]
+  #   volumes:
+  #     - agent2-data:/data
+
+volumes:
+  society-data:
+  relay-data:
