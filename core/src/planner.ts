@@ -90,8 +90,8 @@ const DEFAULT_CONFIG: Required<PlannerConfig> = {
     openaiBaseUrl: 'https://api.openai.com/v1',
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
     anthropicModel: 'claude-3-5-sonnet-20241022',
-    ollamaUrl: 'http://localhost:11434',
-    ollamaModel: 'llama3.2',
+    ollamaUrl: process.env.OLLAMA_HOST || 'http://localhost:11434',
+    ollamaModel: process.env.OLLAMA_MODEL || '',
     customEndpoint: '',
     customHeaders: {},
     temperature: 0.2,
@@ -442,16 +442,35 @@ These steps should be inserted after ${triggerStepId}.
         };
     }
 
+    private async resolveOllamaModel(): Promise<string> {
+        if (this.config.ollamaModel) return this.config.ollamaModel;
+        try {
+            const res = await fetch(`${this.config.ollamaUrl}/api/tags`);
+            if (!res.ok) return 'llama3.2';
+            const data = await res.json() as { models: Array<{ name: string; size: number }> };
+            const localModels = (data.models || []).filter(m => !m.name.includes('cloud'));
+            if (localModels.length === 0) return 'llama3.2';
+            // Prefer largest local model
+            localModels.sort((a, b) => b.size - a.size);
+            const model = localModels[0].name;
+            this.config.ollamaModel = model;
+            return model;
+        } catch {
+            return 'llama3.2';
+        }
+    }
+
     private async callOllama(
         goal: string,
         options: { context?: string; constraints?: string[] },
         startTime: number
     ): Promise<PlanResult> {
+        const model = await this.resolveOllamaModel();
         const response = await fetch(`${this.config.ollamaUrl}/api/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: this.config.ollamaModel,
+                model,
                 system: this.buildSystemPrompt(),
                 prompt: this.buildUserPrompt(goal, options),
                 stream: false,
@@ -473,7 +492,7 @@ These steps should be inserted after ${triggerStepId}.
         return {
             dag,
             provider: 'ollama',
-            model: this.config.ollamaModel,
+            model,
             confidence: parsed.confidence || 0.7,
             latencyMs: Date.now() - startTime,
             cached: false,

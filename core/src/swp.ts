@@ -103,6 +103,15 @@ export type MessageType =
     | 'cot.stream.branch'
     | 'cot.stream.merge'
     | 'cot.stream.end'
+    // Security
+    | 'security.key_exchange'
+    // Knowledge Exchange
+    | 'knowledge.context_sync'
+    | 'knowledge.sync'
+    // Artifact Transfer
+    | 'artifact.offer'
+    | 'artifact.request'
+    | 'artifact.block'
     // System
     | 'system.ping'
     | 'system.pong'

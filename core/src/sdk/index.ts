@@ -157,7 +157,7 @@ export {
 } from '../social.js';
 
 // Version
-export const VERSION = '1.0.1';
+export const VERSION = '1.2.0';
 
 // Utility para verificar se está rodando em ambiente compatível
 export function checkEnvironment(): {

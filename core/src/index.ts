@@ -53,13 +53,14 @@ import { SecurityManager } from './security.js';
 import { IntegrationEngine } from './integration.js';
 import { PersonaVaultEngine } from './persona/index.js';
 import { ProactiveMissionEngine } from './proactive/engine.js';
+import { ProactiveWatcher } from './proactive/watcher.js';
 import type { SwpEnvelope, ChatMsgBody, CocDagNode, Artifact } from './swp.js';
 import { spawn, execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { resolve } from 'path';
 import { realpathSync } from 'fs';
 import { createClient } from './sdk/client.js';
-import { registerNode, resolveNode, stopHeartbeat } from './registry.js';
+import { registerNode, resolveNode, stopHeartbeat, generateFriendlyName } from './registry.js';
 
 // ─── Invite Code Helpers ─────────────────────────────────────────
 // Encode a multiaddr + room into a short invite code: base64url
@@ -203,28 +204,24 @@ program
         const localMultiaddr = `/ip4/127.0.0.1/tcp/${port}/p2p/${peerId}`;
         const localCode = encodeInvite(localMultiaddr, options.room);
 
-        console.log(`  ${green('Node running!')} Room: ${cyan(options.room)}`);
-        console.log('');
-        console.log(`  ${bold('Share with friends on same network:')}`);
-        console.log('');
-        console.log(`    ${bold(cyan(`npx society join ${localCode}`))}`);
-        console.log('');
+        // Auto-register with friendly name
+        const agentName = options.name || generateFriendlyName();
+        const registered = await registerNode(agentName, {
+            multiaddr: localMultiaddr,
+            room: options.room,
+            peerId,
+            name: agentName,
+        });
 
-        // Register friendly name if provided
-        if (options.name) {
-            const registered = await registerNode(options.name, {
-                multiaddr: localMultiaddr,
-                room: options.room,
-                peerId,
-                name: options.name,
-            });
-            if (registered) {
-                console.log(`  ${green('Registered!')} Friends can also join with:`);
-                console.log('');
-                console.log(`    ${bold(cyan(`npx society join ${options.name}`))}`);
-                console.log('');
-            }
+        console.log(`  ${green('Node running!')} Room: ${cyan(options.room)}`);
+        if (registered) {
+            console.log(`  ${bold('Your address:')} ${cyan(`${agentName}@society.computer`)}`);
         }
+        console.log('');
+        console.log(`  ${bold('Share with friends:')}`);
+        console.log('');
+        console.log(`    ${bold(cyan(`npx society join ${registered ? agentName : localCode}`))}`);
+        console.log('');
 
         // If --relay, spawn cloudflared for a public URL
         if (options.relay) {
@@ -254,21 +251,17 @@ program
                         console.log(`    ${bold(cyan(`npx society join ${publicCode}`))}`);
 
                         // Update registry with public multiaddr
-                        if (options.name) {
-                            registerNode(options.name, {
-                                multiaddr: publicMultiaddr,
-                                room: options.room,
-                                peerId,
-                                name: options.name,
-                            }).then(ok => {
-                                if (ok) {
-                                    console.log(`    ${bold(cyan(`npx society join ${options.name}`))}`);
-                                }
-                                console.log('');
-                            });
-                        } else {
+                        registerNode(agentName, {
+                            multiaddr: publicMultiaddr,
+                            room: options.room,
+                            peerId,
+                            name: agentName,
+                        }).then(ok => {
+                            if (ok) {
+                                console.log(`    ${bold(cyan(`npx society join ${agentName}`))}`);
+                            }
                             console.log('');
-                        }
+                        });
                     }
                 });
 
@@ -360,6 +353,8 @@ program
     .option('--relay', 'spawn cloudflared to create a public WebSocket relay')
     .option('--gossipsub', 'enable GossipSub for scalable pub/sub', true)
     .option('--dht', 'enable DHT for peer discovery', true)
+    .option('--encrypted', 'enable E2E encryption for all room messages')
+    .option('--proactive', 'enable proactive agent behavior (watches room, intervenes when relevant)')
     .option('--mission-leader', 'enable proactive mission leadership with auto-restore', false)
     .option('--provider <provider>', 'AI planner provider (openai|anthropic|ollama)', 'openai')
     .option('--debug', 'enable debug logging')
@@ -836,6 +831,8 @@ interface NodeOptions {
     relay?: boolean;
     gossipsub?: boolean;
     dht?: boolean;
+    encrypted?: boolean;
+    proactive?: boolean;
     missionLeader?: boolean;
     provider: PlannerProvider;
     debug?: boolean;
@@ -847,10 +844,9 @@ async function startNode(options: NodeOptions) {
     // Banner
     console.log('');
     console.log('  ╔══════════════════════════════════════════════════════════╗');
-    console.log('  ║         🌐 Society Protocol v1.0 (State of Art)          ║');
-    console.log('  ║       P2P Multi-Agent Collaboration Network Node         ║');
+    console.log('  ║              🌐 Society Protocol v1.0                    ║');
     console.log('  ╠══════════════════════════════════════════════════════════╣');
-    console.log('  ║  Features: GossipSub • DHT • Reputation • Multi-Provider ║');
+    console.log('  ║  GossipSub · Kad-DHT · did:key · CRDT · Reputation      ║');
     console.log('  ╚══════════════════════════════════════════════════════════╝');
     console.log('');
 
@@ -903,13 +899,24 @@ async function startNode(options: NodeOptions) {
         enableGossipsub: options.gossipsub,
     });
 
-    // 6. Initialize room manager
+    // 6. Initialize room manager + encryption
     const rooms = new RoomManager(identity, p2p, storage);
+
+    if (options.encrypted) {
+        const { SecurityManager } = await import('./security.js');
+        const security = new SecurityManager(identity);
+        p2p.setSecurityManager(security);
+        await security.generateKeyPair();
+        console.log(`[init] E2E encryption enabled (AES-256-GCM + X25519)`);
+    }
 
     // 7. Join room
     const roomId = options.room;
     await rooms.joinRoom(roomId, roomId);
-    console.log(`[init] Joined room: ${roomId}`);
+    if (options.encrypted) {
+        rooms.enableEncryption(roomId);
+    }
+    console.log(`[init] Joined room: ${roomId}${options.encrypted ? ' (encrypted)' : ''}`);
 
     // 8. Initialize CoC Engine with reputation
     const coc = new CocEngine(identity, rooms, storage, reputation);
@@ -947,6 +954,7 @@ async function startNode(options: NodeOptions) {
     // 12. Initialize federation/integration stack (Federation Mesh)
     const federation = new FederationEngine(storage, identity);
     const knowledge = new KnowledgePool(storage, identity);
+    rooms.setKnowledgePool(knowledge); // Enable conversational knowledge exchange
     const skills = new SkillsEngine(storage, identity);
     const security = new SecurityManager(identity);
     const persona = new PersonaVaultEngine(storage, identity.did, {
@@ -983,6 +991,17 @@ async function startNode(options: NodeOptions) {
         console.log('[init] Mission leader mode enabled (auto-restore active).');
     }
 
+    // Initialize ProactiveWatcher if --proactive flag
+    let proactiveWatcher: ProactiveWatcher | undefined;
+    if (options.proactive) {
+        proactiveWatcher = new ProactiveWatcher(identity, {
+            level: 1,
+            specialties: [],
+        });
+        proactiveWatcher.watch(rooms, knowledge);
+        console.log(`[init] Proactive watcher enabled (level ${proactiveWatcher.getLevel()})`);
+    }
+
     console.log('');
     console.log('  Type a message and press Enter to send.');
     console.log('  Commands: /peers /rooms /presence /reputation /info /history');
@@ -1006,6 +1025,7 @@ async function startNode(options: NodeOptions) {
     });
 
     rooms.on('presence:update', (_roomId: string, envelope: SwpEnvelope) => {
+        if (envelope.from.did === identity.did) return; // Skip own presence
         const body = envelope.body as any;
         if (body.status === 'online') {
             process.stdout.write('\r\x1b[K');
@@ -1074,6 +1094,25 @@ async function startNode(options: NodeOptions) {
         process.stdout.write('\r\x1b[K');
         console.log(`\n  ${bold(green('✅ Chain Completed'))}: ${chainId}\n`);
         rl.prompt(true);
+
+        // Post-chain knowledge distillation
+        const chain = coc.getChain(chainId);
+        if (chain && knowledge) {
+            const participants = [...new Set(chain.steps.map(s => s.assignee_did).filter(Boolean) as string[])];
+            knowledge.distillChainExperience(
+                chainId,
+                chain.final_report || chain.goal,
+                chain.goal,
+                chain.room_id,
+                participants.length > 0 ? participants : [identity.did]
+            ).then(cards => {
+                if (cards.length > 0) {
+                    process.stdout.write('\r\x1b[K');
+                    console.log(`  ${dim(`📚 Distilled ${cards.length} knowledge card(s) from chain`)}`);
+                    rl.prompt(true);
+                }
+            }).catch(() => {});
+        }
     });
 
     // ─── Interactive REPL ───────────────────────────────────────
@@ -1160,6 +1199,8 @@ async function startNode(options: NodeOptions) {
                 exporter,
                 federation,
                 integration,
+                knowledge,
+                proactiveWatcher,
                 roomId,
                 DEBUG,
             });
@@ -1213,6 +1254,8 @@ interface CommandContext {
     exporter: CapsuleExporter;
     federation: FederationEngine;
     integration: IntegrationEngine;
+    knowledge?: any; // KnowledgePool if initialized
+    proactiveWatcher?: ProactiveWatcher;
     roomId: string;
     DEBUG: boolean;
 }
@@ -1686,6 +1729,110 @@ async function handleCommand(input: string, ctx: CommandContext) {
             break;
         }
 
+        case '/share': {
+            const filePath = args.join(' ').trim();
+            if (!filePath) {
+                console.log(`  Usage: /share <filepath>`);
+                break;
+            }
+            try {
+                const { ContentStore } = await import('./content-store.js');
+                const contentStore = new ContentStore(ctx.storage);
+                const manifest = await contentStore.storeFile(filePath, ctx.identity.did);
+                const sizeKB = (manifest.totalSize / 1024).toFixed(1);
+                console.log(`  ${green('Shared!')} ${manifest.fileName} (${sizeKB}KB, ${manifest.blocks.length} blocks)`);
+                console.log(`  CID: ${dim(manifest.rootCid.slice(0, 16))}...`);
+
+                // Broadcast manifest to room
+                const body = { type: 'artifact.offer', manifest };
+                const swp = await import('./swp.js');
+                const envelope = swp.createEnvelope(
+                    ctx.identity, 'artifact.offer' as any, ctx.roomId, body
+                );
+                const data = new TextEncoder().encode(JSON.stringify(envelope));
+                await ctx.p2p.publish(`${ctx.roomId}/artifacts`, data);
+            } catch (err: any) {
+                console.log(`  Error: ${err.message}`);
+            }
+            break;
+        }
+
+        case '/files': {
+            try {
+                const { ContentStore } = await import('./content-store.js');
+                const contentStore = new ContentStore(ctx.storage);
+                const files = contentStore.listFiles();
+                if (files.length === 0) {
+                    console.log(`  No files shared yet. Use /share <filepath>`);
+                } else {
+                    console.log(`  ${bold('Shared files:')}`);
+                    for (const f of files) {
+                        const sizeKB = (f.totalSize / 1024).toFixed(1);
+                        const date = new Date(f.createdAt).toLocaleTimeString();
+                        console.log(`    ${f.fileName} (${sizeKB}KB) — ${dim(date)} — CID: ${dim(f.rootCid.slice(0, 12))}...`);
+                    }
+                }
+            } catch (err: any) {
+                console.log(`  Error: ${err.message}`);
+            }
+            break;
+        }
+
+        case '/encrypt': {
+            const subCmd = args[0]?.toLowerCase();
+            if (subCmd === 'on') {
+                ctx.rooms.enableEncryption(ctx.roomId);
+                console.log(`  ${green('E2E encryption enabled')} for this room`);
+            } else if (subCmd === 'off') {
+                ctx.rooms.disableEncryption(ctx.roomId);
+                console.log(`  Encryption disabled for this room`);
+            } else {
+                const status = ctx.rooms.isEncrypted(ctx.roomId) ? green('ON') : 'OFF';
+                console.log(`  Encryption: ${status}`);
+                console.log(`  Usage: /encrypt on | /encrypt off`);
+            }
+            break;
+        }
+
+        case '/context': {
+            const knowledge = ctx.knowledge;
+            if (!knowledge) {
+                console.log(`  Knowledge system not available`);
+                break;
+            }
+            const sharedCtx = knowledge.getSharedContext(ctx.roomId);
+            if (sharedCtx) {
+                console.log(sharedCtx);
+            } else {
+                console.log(`  No shared context yet. Chat to build collaborative knowledge.`);
+            }
+            break;
+        }
+
+        case '/proactive': {
+            const subCmd = args[0];
+            if (!ctx.proactiveWatcher) {
+                console.log(`  Proactive watcher not initialized. Start with --proactive flag.`);
+                break;
+            }
+            if (subCmd === 'on') {
+                ctx.proactiveWatcher.setLevel(1);
+                console.log(`  Proactive watcher: ${green('ON')} (level 1 - moderate)`);
+            } else if (subCmd === 'off') {
+                ctx.proactiveWatcher.setLevel(0);
+                console.log(`  Proactive watcher: OFF`);
+            } else if (subCmd === '2' || subCmd === 'aggressive') {
+                ctx.proactiveWatcher.setLevel(2);
+                console.log(`  Proactive watcher: ${green('ON')} (level 2 - aggressive)`);
+            } else {
+                const level = ctx.proactiveWatcher.getLevel();
+                const labels = ['OFF', 'moderate', 'aggressive'];
+                console.log(`  Proactive watcher: level ${level} (${labels[level]})`);
+                console.log(`  Usage: /proactive on | off | 2`);
+            }
+            break;
+        }
+
         case '/debug': {
             console.log(`  Debug mode: ${ctx.DEBUG ? 'ON' : 'OFF'}`);
             break;
@@ -1699,7 +1846,7 @@ async function handleCommand(input: string, ctx: CommandContext) {
             console.log(`  Unknown command: ${cmd}`);
             console.log('  Available: /peers /rooms /presence /reputation /info /history');
             console.log('             /summon /template /chains /chain /step /assign /review');
-            console.log('             /cancel /export /cache /debug /quit');
+            console.log('             /cancel /export /cache /encrypt /context /proactive /debug /quit');
             console.log('             /mesh-request /mesh-accept /mesh-reject /mesh-revoke /mesh-peerings');
             console.log('             /mesh-open /mesh-close /mesh-bridges /mesh-stats');
     }

@@ -1,11 +1,12 @@
 /**
  * Zero-Config Bootstrap Module
- * 
+ *
  * Auto-discovery de peers via:
- * 1. DNS TXT records (bootstrap.society.dev)
- * 2. Hardcoded fallback list
+ * 1. Registry API (api.society.computer)
+ * 2. DNS TXT records (bootstrap.society.dev)
  * 3. Cache local de peers funcionais
- * 4. mDNS para LAN discovery
+ * 4. Hardcoded fallback list
+ * 5. mDNS para LAN discovery
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
@@ -15,6 +16,8 @@ import { promisify } from 'util';
 import { exec } from 'child_process';
 
 const execAsync = promisify(exec);
+
+const REGISTRY_URL = process.env.SOCIETY_REGISTRY_URL || 'https://api.society.computer';
 
 export interface BootstrapPeer {
   id: string;
@@ -185,6 +188,44 @@ export class BootstrapManager {
   }
 
   /**
+   * Query the registry API for registered nodes
+   */
+  private async queryRegistryPeers(): Promise<BootstrapPeer[]> {
+    const peers: BootstrapPeer[] = [];
+
+    try {
+      const res = await fetch(`${REGISTRY_URL}/v1/nodes`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(5_000),
+      });
+
+      if (!res.ok) return peers;
+
+      const data = await res.json() as {
+        nodes: Array<{ name: string; data: { multiaddr: string; peerId?: string; room?: string } }>;
+        count: number;
+      };
+
+      for (const node of data.nodes || []) {
+        if (node.data?.multiaddr) {
+          peers.push({
+            id: `registry_${node.name}`,
+            addrs: [node.data.multiaddr],
+            lastSeen: Date.now(),
+            latency: 0,
+            reliability: 0.8,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[bootstrap] Registry query failed:', (err as Error)?.message);
+    }
+
+    return peers;
+  }
+
+  /**
    * Test connectivity to a peer
    */
   private async testPeer(peer: BootstrapPeer): Promise<{ latency: number; working: boolean }> {
@@ -221,7 +262,17 @@ export class BootstrapManager {
     const testedPeers = new Set<string>();
     const working: BootstrapPeer[] = [];
 
-    // 1. Try DNS first (most up-to-date)
+    // 1. Try registry API first (fastest, most reliable)
+    console.log('[bootstrap] Querying registry...');
+    try {
+      const registryPeers = await this.queryRegistryPeers();
+      allPeers.push(...registryPeers);
+      console.log(`[bootstrap] Registry returned ${registryPeers.length} peers`);
+    } catch (err) {
+      console.warn('[bootstrap] Registry query failed:', err);
+    }
+
+    // 2. Try DNS (fallback)
     console.log('[bootstrap] Querying DNS...');
     try {
       const dnsPeers = await this.queryDnsPeers();
@@ -231,16 +282,16 @@ export class BootstrapManager {
       console.warn('[bootstrap] DNS discovery failed:', err);
     }
 
-    // 2. Try cached peers
+    // 3. Try cached peers
     console.log('[bootstrap] Checking cache...');
     const cachedPeers = Array.from(this.cache.values());
     allPeers.push(...cachedPeers);
 
-    // 3. Add fallback peers
+    // 4. Add fallback peers (env var)
     console.log('[bootstrap] Adding fallback peers...');
     allPeers.push(...this.config.fallbackPeers);
 
-    // 4. Test peers in parallel (with concurrency limit)
+    // 5. Test peers in parallel (with concurrency limit)
     console.log(`[bootstrap] Testing ${allPeers.length} unique peers...`);
     
     const batchSize = 5;
@@ -266,14 +317,14 @@ export class BootstrapManager {
       if (working.length >= 3) break;
     }
 
-    // 5. Sort by reliability and latency
+    // 6. Sort by reliability and latency
     working.sort((a, b) => {
       const scoreA = a.reliability * 1000 - a.latency;
       const scoreB = b.reliability * 1000 - b.latency;
       return scoreB - scoreA;
     });
 
-    // 6. Update cache with working peers
+    // 7. Update cache with working peers
     for (const peer of working) {
       this.cache.set(peer.id, peer);
     }

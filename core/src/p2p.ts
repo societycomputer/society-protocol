@@ -22,6 +22,7 @@ import { gossipsub } from '@chainsafe/libp2p-gossipsub';
 import { generateKeyPair } from '@libp2p/crypto/keys';
 import { EventEmitter } from 'events';
 import { peerIdFromString } from '@libp2p/peer-id';
+import { type SecurityManager } from './security.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -124,6 +125,9 @@ interface WireMessage {
     topic: string;
     data: string; // base64
     priority?: 'high' | 'normal' | 'low';
+    encrypted?: boolean;
+    nonce?: string;          // base64 (12 bytes for AES-GCM)
+    senderPubKey?: string;   // base64 (X25519 public key)
 }
 
 // ─── LRU Cache ──────────────────────────────────────────────────
@@ -190,6 +194,9 @@ export class P2PNode extends EventEmitter {
     private messageHandlers = new Map<string, ((data: Uint8Array, from: string) => void)>();
     private peerLatencies = new Map<string, number>();
     private connectionPool = new LRUCache<string, { stream: any; lastUsed: number }>(MAX_CONNECTION_POOL);
+    private gossipsubAvailable = false; // Detected at runtime
+    private security?: SecurityManager;
+    private encryptedTopics = new Set<string>(); // Topics that require encryption
     private stats: BandwidthStats = {
         bytesSent: 0,
         bytesReceived: 0,
@@ -279,17 +286,24 @@ export class P2PNode extends EventEmitter {
         // Set up protocol handler for direct streams
         await this.node.handle(SOCIETY_PROTOCOL, this.handleProtocolStream.bind(this));
 
-        // Set up GossipSub message handler
+        // Set up GossipSub message handler (detect compatibility at runtime)
         if (this.config.enableGossipsub) {
-            // @ts-ignore - pubsub exists in runtime
-            this.node.services.pubsub.addEventListener('message', (evt: any) => {
-                this.handleGossipMessage(evt);
-            });
+            try {
+                // @ts-ignore - pubsub exists in runtime
+                this.node.services.pubsub.addEventListener('message', (evt: any) => {
+                    this.handleGossipMessage(evt);
+                });
 
-            // @ts-ignore - pubsub exists in runtime
-            this.node.services.pubsub.addEventListener('subscription-change', (evt: any) => {
-                this.emit('subscription:change', evt);
-            });
+                // @ts-ignore - pubsub exists in runtime
+                this.node.services.pubsub.addEventListener('subscription-change', (evt: any) => {
+                    this.emit('subscription:change', evt);
+                });
+
+                this.gossipsubAvailable = true;
+            } catch {
+                this.gossipsubAvailable = false;
+                console.log(`[p2p] GossipSub unavailable (interface version mismatch), using direct protocol`);
+            }
         }
 
         // Track peer connections
@@ -317,9 +331,6 @@ export class P2PNode extends EventEmitter {
         console.log(`[p2p] Listening on:`);
         addrs.forEach((a) => console.log(`  ${a}`));
 
-        if (this.config.enableGossipsub) {
-            console.log(`[p2p] GossipSub enabled`);
-        }
         if (this.config.enableDht) {
             console.log(`[p2p] DHT enabled`);
         }
@@ -336,9 +347,13 @@ export class P2PNode extends EventEmitter {
     async subscribe(topic: string, handler?: (data: Uint8Array, from: string) => void): Promise<void> {
         if (this.subscribedTopics.has(topic)) return;
 
-        if (this.config.enableGossipsub) {
-            // @ts-ignore - pubsub exists in runtime
-            await this.node.services.pubsub.subscribe(topic);
+        if (this.gossipsubAvailable) {
+            try {
+                // @ts-ignore - pubsub exists in runtime
+                await this.node.services.pubsub.subscribe(topic);
+            } catch {
+                // GossipSub subscribe failed — continue with direct protocol
+            }
         }
 
         this.subscribedTopics.add(topic);
@@ -351,16 +366,19 @@ export class P2PNode extends EventEmitter {
             this.messageHandlers.set(topic, handler);
         }
 
-        console.log(`[p2p] Subscribed to: ${topic}`);
         this.emit('subscribed', topic);
     }
 
     async unsubscribe(topic: string): Promise<void> {
         if (!this.subscribedTopics.has(topic)) return;
 
-        if (this.config.enableGossipsub) {
-            // @ts-ignore - pubsub exists in runtime
-            await this.node.services.pubsub.unsubscribe(topic);
+        if (this.gossipsubAvailable) {
+            try {
+                // @ts-ignore - pubsub exists in runtime
+                await this.node.services.pubsub.unsubscribe(topic);
+            } catch {
+                // GossipSub unsubscribe failed — ignore
+            }
         }
 
         this.subscribedTopics.delete(topic);
@@ -370,7 +388,6 @@ export class P2PNode extends EventEmitter {
             P2PNode.inProcessTopicSubscribers.delete(topic);
         }
 
-        console.log(`[p2p] Unsubscribed from: ${topic}`);
         this.emit('unsubscribed', topic);
     }
 
@@ -384,26 +401,52 @@ export class P2PNode extends EventEmitter {
         this.stats.bytesSent += data.byteLength;
         this.stats.messagesSent += 1;
 
-        if (this.config.enableGossipsub) {
-            // Use GossipSub for scalable broadcast
-            // @ts-ignore - pubsub exists in runtime
-            await this.node.services.pubsub.publish(topic, data);
-            // Best-effort fallback for local/integration environments where gossip mesh may be slow.
-            await this.publishDirect(topic, data, priority);
-        } else {
-            // Fallback to direct protocol streaming
-            await this.publishDirect(topic, data, priority);
+        if (this.gossipsubAvailable) {
+            try {
+                // @ts-ignore - pubsub exists in runtime
+                await this.node.services.pubsub.publish(topic, data);
+            } catch {
+                // GossipSub may fail if mesh is not formed — fall through to direct
+            }
         }
+
+        // Always send via direct protocol as primary delivery mechanism
+        await this.publishDirect(topic, data, priority);
 
         this.publishInProcess(topic, data);
     }
 
     private async publishDirect(topic: string, data: Uint8Array, priority: 'high' | 'normal' | 'low'): Promise<void> {
-        const wireMsg: WireMessage = {
-            topic,
-            data: Buffer.from(data).toString('base64'),
-            priority,
-        };
+        let wireMsg: WireMessage;
+
+        // Encrypt if topic requires it and SecurityManager is available
+        if (this.encryptedTopics.has(topic) && this.security) {
+            try {
+                const encrypted = await this.security.encrypt(data, new Uint8Array(32)); // broadcast key
+                wireMsg = {
+                    topic,
+                    data: Buffer.from(encrypted.ciphertext).toString('base64'),
+                    priority,
+                    encrypted: true,
+                    nonce: Buffer.from(encrypted.nonce).toString('base64'),
+                    senderPubKey: Buffer.from(encrypted.senderPublicKey).toString('base64'),
+                };
+            } catch {
+                // Encryption failed — send plaintext as fallback
+                wireMsg = {
+                    topic,
+                    data: Buffer.from(data).toString('base64'),
+                    priority,
+                };
+            }
+        } else {
+            wireMsg = {
+                topic,
+                data: Buffer.from(data).toString('base64'),
+                priority,
+            };
+        }
+
         const payload = new TextEncoder().encode(JSON.stringify(wireMsg) + '\n');
 
         const peers = this.node.getPeers();
@@ -555,53 +598,68 @@ export class P2PNode extends EventEmitter {
 
     // ─── Handlers ─────────────────────────────────────────────────
 
-    private async handleProtocolStream(stream: any): Promise<void> {
+    // libp2p 3.x handler: (stream, connection) as separate args
+    private async handleProtocolStream(stream: any, connection?: any): Promise<void> {
+        const remotePeer = connection?.remotePeer?.toString() || 'unknown';
+        let buffer = '';
+
         try {
-            const chunks: Uint8Array[] = [];
             for await (const chunk of stream) {
                 const bytes = chunk instanceof Uint8Array
                     ? chunk
                     : (chunk.subarray ? chunk.subarray() : new Uint8Array(chunk));
-                chunks.push(bytes);
-            }
 
-            const totalLen = chunks.reduce((a, c) => a + c.length, 0);
-            const combined = new Uint8Array(totalLen);
-            let offset = 0;
-            for (const c of chunks) {
-                combined.set(c, offset);
-                offset += c.length;
-            }
+                buffer += new TextDecoder().decode(bytes);
 
-            const text = new TextDecoder().decode(combined);
+                // Process complete lines as they arrive (newline-delimited JSON)
+                let newlineIdx;
+                while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
+                    const line = buffer.slice(0, newlineIdx).trim();
+                    buffer = buffer.slice(newlineIdx + 1);
 
-            for (const line of text.split('\n')) {
-                if (!line.trim()) continue;
-                try {
-                    const msg: WireMessage = JSON.parse(line);
-                    
-                    // Dedup
-                    const msgHash = await this.hashMessage(Buffer.from(msg.data, 'base64'));
-                    if (this.seenMessages.has(msgHash)) continue;
-                    this.seenMessages.set(msgHash, Date.now());
+                    if (!line) continue;
+                    try {
+                        const msg: WireMessage = JSON.parse(line);
 
-                    // Route to handler
-                    const data = Buffer.from(msg.data, 'base64');
-                    this.stats.bytesReceived += data.byteLength;
-                    this.stats.messagesReceived += 1;
-                    const handler = this.messageHandlers.get(msg.topic);
-                    if (handler) {
-                        handler(new Uint8Array(data), stream.connection?.remotePeer?.toString() || 'unknown');
+                        // Dedup
+                        const msgHash = await this.hashMessage(Buffer.from(msg.data, 'base64'));
+                        if (this.seenMessages.has(msgHash)) continue;
+                        this.seenMessages.set(msgHash, Date.now());
+
+                        // Decrypt if encrypted
+                        let data: Buffer;
+                        if (msg.encrypted && msg.nonce && msg.senderPubKey && this.security) {
+                            try {
+                                const plaintext = await this.security.decrypt({
+                                    ciphertext: new Uint8Array(Buffer.from(msg.data, 'base64')),
+                                    nonce: new Uint8Array(Buffer.from(msg.nonce, 'base64')),
+                                    senderPublicKey: new Uint8Array(Buffer.from(msg.senderPubKey, 'base64')),
+                                });
+                                data = Buffer.from(plaintext);
+                            } catch {
+                                // Decryption failed — skip this message
+                                continue;
+                            }
+                        } else {
+                            data = Buffer.from(msg.data, 'base64');
+                        }
+
+                        this.stats.bytesReceived += data.byteLength;
+                        this.stats.messagesReceived += 1;
+                        const handler = this.messageHandlers.get(msg.topic);
+                        if (handler) {
+                            handler(new Uint8Array(data), remotePeer);
+                        }
+
+                        // Emit general message event
+                        this.emit('message', msg.topic, new Uint8Array(data), remotePeer);
+                    } catch {
+                        // Malformed JSON line — skip
                     }
-
-                    // Emit general message event
-                    this.emit('message', msg.topic, new Uint8Array(data), stream.connection?.remotePeer?.toString() || 'unknown');
-                } catch {
-                    // Malformed JSON
                 }
             }
         } catch {
-            // Stream error
+            // Stream closed or errored — expected for long-lived connections
         }
     }
 
@@ -700,6 +758,46 @@ export class P2PNode extends EventEmitter {
         const { blake3 } = await import('@noble/hashes/blake3');
         const hash = blake3(data);
         return Buffer.from(hash).toString('base64url');
+    }
+
+    // ─── Encryption ─────────────────────────────────────────────────
+
+    /**
+     * Attach a SecurityManager for E2E encryption.
+     * Call this before publishing encrypted messages.
+     */
+    setSecurityManager(security: SecurityManager): void {
+        this.security = security;
+    }
+
+    /**
+     * Enable encryption for all messages on a given topic.
+     */
+    enableEncryption(topic: string): void {
+        this.encryptedTopics.add(topic);
+    }
+
+    /**
+     * Disable encryption for a topic.
+     */
+    disableEncryption(topic: string): void {
+        this.encryptedTopics.delete(topic);
+    }
+
+    /**
+     * Check if encryption is enabled for a topic.
+     */
+    isEncrypted(topic: string): boolean {
+        return this.encryptedTopics.has(topic);
+    }
+
+    /**
+     * Get the local encryption public key (for key exchange).
+     */
+    async getEncryptionPublicKey(): Promise<Uint8Array | undefined> {
+        if (!this.security) return undefined;
+        await this.security.generateKeyPair();
+        return (this.security as any).localEncryptionPublicKey;
     }
 
     async stop(): Promise<void> {

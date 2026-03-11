@@ -86,6 +86,28 @@ export function stopHeartbeat(): void {
     }
 }
 
+/**
+ * Generate a human-friendly name for an agent (adjective-animal).
+ */
+export function generateFriendlyName(): string {
+    const adjectives = [
+        'brave', 'calm', 'clever', 'eager', 'fair', 'gentle', 'happy',
+        'keen', 'lively', 'noble', 'proud', 'quick', 'sharp', 'swift',
+        'warm', 'wise', 'bold', 'bright', 'cosmic', 'daring', 'fierce',
+        'golden', 'iron', 'jade', 'lunar', 'mystic', 'neon', 'orbit',
+        'pixel', 'quantum', 'ruby', 'solar', 'titan', 'ultra', 'vivid',
+    ];
+    const animals = [
+        'fox', 'owl', 'wolf', 'hawk', 'lynx', 'bear', 'deer', 'hare',
+        'crane', 'eagle', 'falcon', 'otter', 'raven', 'tiger', 'whale',
+        'cobra', 'dragon', 'gecko', 'jaguar', 'koala', 'lemur', 'manta',
+        'narwhal', 'ocelot', 'panda', 'quail', 'robin', 'shark', 'viper',
+    ];
+    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const animal = animals[Math.floor(Math.random() * animals.length)];
+    return `${adj}-${animal}`;
+}
+
 // ─── Internal ────────────────────────────────────────────────────
 
 async function putRegistration(name: string, info: NodeInfo): Promise<boolean> {

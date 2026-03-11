@@ -32,6 +32,7 @@ import {
     type AdapterProfile,
 } from './swp.js';
 import { Storage } from './storage.js';
+import { type KnowledgePool, type ChatMessage } from './knowledge.js';
 import { ulid } from 'ulid';
 import { EventEmitter } from 'events';
 
@@ -67,6 +68,8 @@ export class RoomManager extends EventEmitter {
     private storage: Storage;
     private heartbeatIntervals = new Map<string, ReturnType<typeof setInterval>>();
     private joinedRooms = new Set<string>();
+    private encryptedRooms = new Set<string>();
+    private knowledgePool?: KnowledgePool;
     private presenceBroadcastInterval?: ReturnType<typeof setInterval>;
 
     constructor(identity: Identity, p2p: P2PNode, storage: Storage) {
@@ -77,6 +80,15 @@ export class RoomManager extends EventEmitter {
 
         // Set up P2P message handlers
         this.setupP2PHandlers();
+    }
+
+    /**
+     * Attach a KnowledgePool for conversational knowledge exchange.
+     * When set, all chat messages are automatically ingested into the
+     * collaborative context for auto-compaction and knowledge extraction.
+     */
+    setKnowledgePool(pool: KnowledgePool): void {
+        this.knowledgePool = pool;
     }
 
     private setupP2PHandlers(): void {
@@ -491,6 +503,26 @@ export class RoomManager extends EventEmitter {
                 this.emit('mission:event', roomId, envelope);
                 break;
 
+            // Knowledge exchange
+            case 'knowledge.context_sync':
+                this.handleKnowledgeContextSync(envelope);
+                break;
+            case 'knowledge.sync':
+                this.handleKnowledgeSync(envelope);
+                break;
+
+            // Security
+            case 'security.key_exchange':
+                this.emit('security:key_exchange', roomId, envelope);
+                break;
+
+            // Artifact transfer
+            case 'artifact.offer':
+            case 'artifact.request':
+            case 'artifact.block':
+                this.emit('artifact:event', roomId, envelope);
+                break;
+
             default:
                 // Unknown message type
                 this.emit('message:unknown', roomId, envelope);
@@ -512,8 +544,45 @@ export class RoomManager extends EventEmitter {
             envelope.ts
         );
 
+        // Feed into knowledge pool for conversational context
+        if (this.knowledgePool) {
+            const chatMsg: ChatMessage = {
+                id: envelope.id,
+                sender: envelope.from.did,
+                senderName: envelope.from.name,
+                content: body.text,
+                timestamp: envelope.ts,
+                roomId,
+            };
+            this.knowledgePool.ingestChatMessage(roomId, chatMsg).catch(() => {
+                // Non-critical — knowledge ingestion failure should not break chat
+            });
+        }
+
         // Emit
         this.emit('chat:message', roomId, envelope);
+    }
+
+    private handleKnowledgeContextSync(envelope: SwpEnvelope): void {
+        if (!this.knowledgePool) return;
+        const body = envelope.body as unknown as { data: string };
+        if (body.data) {
+            const data = new TextEncoder().encode(
+                typeof body.data === 'string' ? body.data : JSON.stringify(body.data)
+            );
+            this.knowledgePool.mergeRemoteContext(data).catch(() => {});
+        }
+    }
+
+    private handleKnowledgeSync(envelope: SwpEnvelope): void {
+        if (!this.knowledgePool) return;
+        const body = envelope.body as unknown as { card: string };
+        if (body.card) {
+            const data = new TextEncoder().encode(
+                typeof body.card === 'string' ? body.card : JSON.stringify(body.card)
+            );
+            this.knowledgePool.handleSyncMessage(data, envelope.from.did);
+        }
     }
 
     private handlePresenceMessage(envelope: SwpEnvelope): void {
@@ -554,6 +623,41 @@ export class RoomManager extends EventEmitter {
 
     isJoined(roomId: string): boolean {
         return this.joinedRooms.has(roomId);
+    }
+
+    // ─── Encryption ─────────────────────────────────────────────
+
+    /**
+     * Enable E2E encryption for all messages in a room.
+     * All chat, CoC, and data topics for this room will be encrypted.
+     */
+    enableEncryption(roomId: string): void {
+        this.encryptedRooms.add(roomId);
+        // Enable encryption on the main communication topics
+        this.p2p.enableEncryption(chatTopic(roomId));
+        this.p2p.enableEncryption(cocTopic(roomId));
+        this.p2p.enableEncryption(capsuleTopic(roomId));
+        this.p2p.enableEncryption(federationTopic(roomId));
+        this.p2p.enableEncryption(personaTopic(roomId));
+    }
+
+    /**
+     * Disable E2E encryption for a room.
+     */
+    disableEncryption(roomId: string): void {
+        this.encryptedRooms.delete(roomId);
+        this.p2p.disableEncryption(chatTopic(roomId));
+        this.p2p.disableEncryption(cocTopic(roomId));
+        this.p2p.disableEncryption(capsuleTopic(roomId));
+        this.p2p.disableEncryption(federationTopic(roomId));
+        this.p2p.disableEncryption(personaTopic(roomId));
+    }
+
+    /**
+     * Check if a room has encryption enabled.
+     */
+    isEncrypted(roomId: string): boolean {
+        return this.encryptedRooms.has(roomId);
     }
 
     // ─── Private ──────────────────────────────────────────────────

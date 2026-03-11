@@ -325,6 +325,29 @@ export function compareHLC(a: HybridLogicalClock, b: HybridLogicalClock): number
 
 // ─── Knowledge Pool Engine ───────────────────────────────────────
 
+export interface ChatMessage {
+    id: string;
+    sender: string;       // DID or friendly name
+    senderName?: string;
+    content: string;
+    timestamp: number;
+    roomId?: string;
+}
+
+export interface ContextCompactionConfig {
+    compactAfterMessages: number;  // Auto-compact after N messages (default 20)
+    maxRecentMessages: number;     // Keep last N raw messages (default 40)
+    ollamaUrl?: string;            // Ollama endpoint for summarization
+    ollamaModel?: string;          // Model for summarization (default qwen3:1.7b)
+}
+
+const DEFAULT_COMPACTION_CONFIG: ContextCompactionConfig = {
+    compactAfterMessages: 20,
+    maxRecentMessages: 40,
+    ollamaUrl: 'http://127.0.0.1:11434',
+    ollamaModel: 'qwen3:1.7b',
+};
+
 export class KnowledgePool extends EventEmitter {
     private cards = new Map<KnowledgeId, KnowledgeCard>();
     private spaces = new Map<SpaceId, KnowledgeSpace>();
@@ -338,12 +361,19 @@ export class KnowledgePool extends EventEmitter {
     // Link indexes for O(1) graph traversal (fixes N+1 query)
     private linksBySource = new Map<KnowledgeId, KnowledgeLink[]>();
     private linksByTarget = new Map<KnowledgeId, KnowledgeLink[]>();
-    
+
+    // Chat message buffers per space (for auto-compaction)
+    private chatBuffers = new Map<string, ChatMessage[]>();
+    private compactionConfig: ContextCompactionConfig;
+    private compacting = new Set<string>(); // spaces currently compacting
+
     constructor(
         private storage: Storage,
-        private identity: Identity
+        private identity: Identity,
+        compactionConfig?: Partial<ContextCompactionConfig>
     ) {
         super();
+        this.compactionConfig = { ...DEFAULT_COMPACTION_CONFIG, ...compactionConfig };
         this.loadFromStorage();
     }
 
@@ -995,7 +1025,494 @@ ${cu.workingMemory.contextWindow}
         `.trim();
     }
 
+    // ─── Conversational Knowledge Exchange ─────────────────────
+
+    /**
+     * Get or create CollectiveUnconscious for a space/room.
+     * Public so rooms can initialize knowledge tracking.
+     */
+    async getOrCreateCU(spaceId: SpaceId): Promise<CollectiveUnconscious> {
+        const existing = this.collectiveUnconscious.get(spaceId);
+        if (existing) return existing;
+        return this.createCollectiveUnconscious(spaceId);
+    }
+
+    /**
+     * Ingest a chat message into the collaborative context.
+     * Called by RoomManager when chat messages are received.
+     * Triggers auto-compaction when buffer exceeds threshold.
+     */
+    async ingestChatMessage(spaceId: SpaceId, msg: ChatMessage): Promise<void> {
+        const cu = await this.getOrCreateCU(spaceId);
+
+        // Add to raw buffer
+        if (!this.chatBuffers.has(spaceId)) {
+            this.chatBuffers.set(spaceId, []);
+        }
+        const buffer = this.chatBuffers.get(spaceId)!;
+        buffer.push(msg);
+
+        // Update working memory
+        const senderLabel = msg.senderName || msg.sender.slice(0, 16);
+        cu.workingMemory.recentMessages.push(
+            `[${senderLabel}]: ${msg.content}`
+        );
+
+        // Track participants
+        if (!cu.workingMemory.participants.includes(msg.sender)) {
+            cu.workingMemory.participants.push(msg.sender);
+        }
+
+        // Trim recent messages to max
+        const max = this.compactionConfig.maxRecentMessages;
+        if (cu.workingMemory.recentMessages.length > max) {
+            cu.workingMemory.recentMessages = cu.workingMemory.recentMessages.slice(-max);
+        }
+
+        cu.lastUpdate = Date.now();
+
+        // Auto-compact when buffer reaches threshold
+        if (buffer.length >= this.compactionConfig.compactAfterMessages && !this.compacting.has(spaceId)) {
+            this.compacting.add(spaceId);
+            this.compactContext(spaceId).finally(() => this.compacting.delete(spaceId));
+        }
+
+        this.emit('chat:ingested', { spaceId, msg });
+    }
+
+    /**
+     * Compact the conversation context using Ollama.
+     * Summarizes recent messages into a dense context window,
+     * extracts key concepts, decisions, and open questions.
+     */
+    async compactContext(spaceId: SpaceId): Promise<void> {
+        const cu = this.collectiveUnconscious.get(spaceId);
+        if (!cu) return;
+
+        const buffer = this.chatBuffers.get(spaceId) || [];
+        if (buffer.length === 0) return;
+
+        // Build conversation transcript
+        const transcript = buffer.map(m => {
+            const name = m.senderName || m.sender.slice(0, 16);
+            return `${name}: ${m.content}`;
+        }).join('\n');
+
+        const previousContext = cu.workingMemory.contextWindow || '';
+
+        try {
+            const response = await this.callOllama(
+                `You are a context compactor for a multi-agent conversation system.
+
+Given the previous context summary and new conversation messages, produce a COMPACT updated context.
+
+PREVIOUS CONTEXT:
+${previousContext || '(none)'}
+
+NEW MESSAGES:
+${transcript}
+
+Produce a JSON response with these fields:
+- "contextSummary": A concise summary of the conversation state (max 500 chars)
+- "activeTopics": Array of topic strings currently being discussed
+- "keyConcepts": Array of key facts/concepts established
+- "decisions": Array of decisions made (if any)
+- "openQuestions": Array of unresolved questions
+- "recurringThemes": Array of recurring themes
+
+Respond ONLY with valid JSON, no markdown.`
+            );
+
+            const parsed = this.parseJsonResponse(response);
+            if (parsed) {
+                cu.workingMemory.contextWindow = parsed.contextSummary || previousContext;
+                cu.workingMemory.activeTopics = parsed.activeTopics || cu.workingMemory.activeTopics;
+
+                if (parsed.keyConcepts?.length) {
+                    for (const concept of parsed.keyConcepts) {
+                        if (!cu.longTermMemory.keyConcepts.includes(concept)) {
+                            cu.longTermMemory.keyConcepts.push(concept);
+                        }
+                    }
+                    // Keep bounded
+                    cu.longTermMemory.keyConcepts = cu.longTermMemory.keyConcepts.slice(-50);
+                }
+
+                if (parsed.decisions?.length) {
+                    cu.sharedState.decisions.push(...parsed.decisions);
+                    cu.sharedState.decisions = cu.sharedState.decisions.slice(-20);
+                }
+
+                if (parsed.openQuestions?.length) {
+                    cu.sharedState.openQuestions = parsed.openQuestions;
+                }
+
+                if (parsed.recurringThemes?.length) {
+                    cu.longTermMemory.recurringThemes = parsed.recurringThemes;
+                }
+            }
+        } catch {
+            // Ollama unavailable — use simple text compaction
+            cu.workingMemory.contextWindow = this.simpleCompact(previousContext, transcript);
+        }
+
+        // Clear the buffer after compaction
+        this.chatBuffers.set(spaceId, []);
+        cu.lastUpdate = Date.now();
+        cu.coherence = Math.min(1.0, cu.coherence + 0.05);
+
+        await this.saveCollectiveUnconscious(cu);
+        this.emit('context:compacted', { spaceId, cu });
+    }
+
+    /**
+     * Serialize the collaborative context for sharing with peers.
+     * Used by knowledge.context_sync SWP messages.
+     */
+    serializeContext(spaceId: SpaceId): Uint8Array | null {
+        const cu = this.collectiveUnconscious.get(spaceId);
+        if (!cu) return null;
+
+        const payload = {
+            spaceId,
+            contextWindow: cu.workingMemory.contextWindow,
+            activeTopics: cu.workingMemory.activeTopics,
+            keyConcepts: cu.longTermMemory.keyConcepts,
+            recurringThemes: cu.longTermMemory.recurringThemes,
+            decisions: cu.sharedState.decisions,
+            openQuestions: cu.sharedState.openQuestions,
+            lastUpdate: cu.lastUpdate,
+        };
+
+        return new TextEncoder().encode(JSON.stringify(payload));
+    }
+
+    /**
+     * Merge a remote context sync into the local CollectiveUnconscious.
+     * Takes the union of topics, concepts, decisions, etc.
+     */
+    async mergeRemoteContext(data: Uint8Array): Promise<void> {
+        try {
+            const remote = JSON.parse(new TextDecoder().decode(data));
+            const cu = await this.getOrCreateCU(remote.spaceId);
+
+            // Merge context window: keep longer/newer
+            if (remote.lastUpdate > cu.lastUpdate && remote.contextWindow) {
+                cu.workingMemory.contextWindow = remote.contextWindow;
+            }
+
+            // Union active topics
+            if (remote.activeTopics?.length) {
+                const topics = new Set([...cu.workingMemory.activeTopics, ...remote.activeTopics]);
+                cu.workingMemory.activeTopics = Array.from(topics).slice(-20);
+            }
+
+            // Union key concepts
+            if (remote.keyConcepts?.length) {
+                const concepts = new Set([...cu.longTermMemory.keyConcepts, ...remote.keyConcepts]);
+                cu.longTermMemory.keyConcepts = Array.from(concepts).slice(-50);
+            }
+
+            // Union recurring themes
+            if (remote.recurringThemes?.length) {
+                const themes = new Set([...cu.longTermMemory.recurringThemes, ...remote.recurringThemes]);
+                cu.longTermMemory.recurringThemes = Array.from(themes);
+            }
+
+            // Union decisions
+            if (remote.decisions?.length) {
+                const decisions = new Set([...cu.sharedState.decisions, ...remote.decisions]);
+                cu.sharedState.decisions = Array.from(decisions).slice(-20);
+            }
+
+            // Merge open questions
+            if (remote.openQuestions?.length) {
+                const questions = new Set([...cu.sharedState.openQuestions, ...remote.openQuestions]);
+                cu.sharedState.openQuestions = Array.from(questions);
+            }
+
+            cu.lastUpdate = Math.max(cu.lastUpdate, remote.lastUpdate);
+            await this.saveCollectiveUnconscious(cu);
+            this.emit('context:synced', { spaceId: remote.spaceId });
+        } catch (err) {
+            this.emit('context:sync-error', { error: err });
+        }
+    }
+
+    /**
+     * Get the chat message buffer for a space (for inspection/testing).
+     */
+    getChatBuffer(spaceId: SpaceId): ChatMessage[] {
+        return this.chatBuffers.get(spaceId) || [];
+    }
+
+    // ─── Knowledge Gossip Sync ───────────────────────────────────
+
+    /**
+     * Get top knowledge cards for gossip broadcast to peers.
+     * Returns cards sorted by confidence * usage, most valuable first.
+     */
+    getGossipPayload(spaceId: SpaceId, limit = 10): KnowledgeCard[] {
+        return this.queryCards({
+            spaceId,
+            sortBy: 'relevance',
+            limit,
+        });
+    }
+
+    /**
+     * Apply knowledge decay to all cards.
+     * Cards not reinforced lose confidence over time.
+     * Should be called periodically (e.g., daily).
+     *
+     * @param decayRate - fraction of confidence lost per call (default 0.05 = 5%)
+     */
+    applyKnowledgeDecay(decayRate = 0.05): number {
+        let decayed = 0;
+        const now = Date.now();
+        const dayMs = 24 * 60 * 60 * 1000;
+
+        for (const card of this.cards.values()) {
+            if (card.crdt.tombstone) continue;
+
+            const daysSinceAccess = (now - card.usage.lastAccessed) / dayMs;
+            if (daysSinceAccess < 1) continue; // Skip recently accessed
+
+            const oldConfidence = card.confidence;
+            card.confidence = Math.max(0.1, card.confidence * (1 - decayRate));
+
+            if (card.confidence !== oldConfidence) {
+                card.updatedAt = now;
+                this.saveCard(card);
+                decayed++;
+            }
+        }
+
+        this.emit('knowledge:decay', { decayed, decayRate });
+        return decayed;
+    }
+
+    /**
+     * Boost confidence when multiple agents confirm the same fact.
+     * If 2+ agents have verified a card, boost by confirmationBoost.
+     *
+     * @param cardId - card to boost
+     * @param verifierDid - DID of the confirming agent
+     * @param boostAmount - confidence boost (default 0.2 = 20%)
+     */
+    confirmKnowledge(cardId: KnowledgeId, verifierDid: string, boostAmount = 0.2): KnowledgeCard | null {
+        const card = this.cards.get(cardId);
+        if (!card || card.crdt.tombstone) return null;
+
+        // Add verification if not already present
+        const alreadyVerified = card.verifications.some(v => v.verifier === verifierDid);
+        if (!alreadyVerified) {
+            card.verifications.push({
+                verifier: verifierDid,
+                timestamp: Date.now(),
+                method: 'consensus',
+                confidence: card.confidence + boostAmount,
+            });
+        }
+
+        // Boost confidence based on number of unique verifiers
+        const uniqueVerifiers = new Set(card.verifications.map(v => v.verifier));
+        if (uniqueVerifiers.size >= 2) {
+            card.confidence = Math.min(1.0, card.confidence + boostAmount);
+            card.verificationStatus = 'verified';
+        }
+
+        card.updatedAt = Date.now();
+        card.crdt.hlc = tickHLC(card.crdt.hlc);
+        card.crdt.vectorClock[this.identity.did] =
+            (card.crdt.vectorClock[this.identity.did] || 0) + 1;
+
+        this.saveCard(card);
+        this.emit('knowledge:confirmed', { cardId, verifier: verifierDid, confidence: card.confidence });
+        return card;
+    }
+
+    /**
+     * Distill lessons learned from a completed CoC chain.
+     * Creates knowledge cards from the chain's experience.
+     *
+     * @param chainId - ID of the completed chain
+     * @param summary - chain summary/final report
+     * @param goal - original chain goal
+     * @param spaceId - space to store knowledge in
+     * @param participants - DIDs of participating agents
+     */
+    async distillChainExperience(
+        chainId: string,
+        summary: string,
+        goal: string,
+        spaceId: SpaceId,
+        participants: string[]
+    ): Promise<KnowledgeCard[]> {
+        const space = this.spaces.get(spaceId);
+        if (!space) return [];
+
+        const cards: KnowledgeCard[] = [];
+
+        try {
+            const response = await this.callOllama(
+                `You are a knowledge extractor for a multi-agent collaboration system.
+
+A collaborative chain (goal: "${goal}") has completed. Extract the key lessons learned.
+
+CHAIN SUMMARY:
+${summary}
+
+PARTICIPANTS: ${participants.length} agents
+
+Produce a JSON array of knowledge items to store. Each item should have:
+- "type": one of "insight", "decision", "sop", "finding"
+- "title": concise title (max 80 chars)
+- "content": detailed description
+- "tags": array of relevant tags
+- "confidence": 0-1 confidence score
+
+Respond ONLY with a valid JSON array.`
+            );
+
+            const parsed = this.parseJsonResponse(response);
+            const items = Array.isArray(parsed) ? parsed : (parsed?.items || []);
+
+            for (const item of items.slice(0, 5)) {
+                if (!item.title || !item.content) continue;
+                const card = await this.createCard(spaceId, item.type || 'insight', item.title, item.content, {
+                    tags: item.tags || [],
+                    source: { type: 'coc', id: chainId, context: goal },
+                    confidence: item.confidence || 0.7,
+                });
+                cards.push(card);
+            }
+        } catch {
+            // Ollama unavailable — create a single summary card
+            const card = await this.createCard(spaceId, 'finding', `Chain ${chainId.slice(0, 8)}: ${goal}`, summary, {
+                tags: ['chain-distill', 'auto-extracted'],
+                source: { type: 'coc', id: chainId, context: goal },
+                confidence: 0.6,
+            });
+            cards.push(card);
+        }
+
+        this.emit('knowledge:distilled', { chainId, cardCount: cards.length });
+        return cards;
+    }
+
+    /**
+     * Extract knowledge from a batch of chat messages.
+     * Used for periodic knowledge extraction from conversations.
+     */
+    async extractFromConversation(
+        spaceId: SpaceId,
+        messages: ChatMessage[]
+    ): Promise<KnowledgeCard[]> {
+        const space = this.spaces.get(spaceId);
+        if (!space || messages.length === 0) return [];
+
+        const transcript = messages.map(m => {
+            const name = m.senderName || m.sender.slice(0, 16);
+            return `${name}: ${m.content}`;
+        }).join('\n');
+
+        const cards: KnowledgeCard[] = [];
+
+        try {
+            const response = await this.callOllama(
+                `You are a knowledge extractor. Extract key facts and insights from this conversation.
+
+CONVERSATION:
+${transcript}
+
+Extract structured knowledge items as a JSON array. Each item:
+- "type": "fact" | "insight" | "decision" | "hypothesis"
+- "title": concise title
+- "content": the knowledge content
+- "tags": relevant tags
+- "confidence": 0-1
+
+Only extract genuinely useful knowledge. Skip small talk or trivial messages.
+Respond ONLY with a valid JSON array. Return empty array [] if nothing useful.`
+            );
+
+            const parsed = this.parseJsonResponse(response);
+            const items = Array.isArray(parsed) ? parsed : [];
+
+            for (const item of items.slice(0, 5)) {
+                if (!item.title || !item.content) continue;
+                const card = await this.createCard(spaceId, item.type || 'fact', item.title, item.content, {
+                    tags: [...(item.tags || []), 'auto-extracted', 'chat'],
+                    source: { type: 'chat', context: spaceId },
+                    confidence: item.confidence || 0.6,
+                });
+                cards.push(card);
+            }
+        } catch {
+            // Ollama unavailable — skip extraction
+        }
+
+        this.emit('knowledge:extracted', { spaceId, cardCount: cards.length });
+        return cards;
+    }
+
     // ─── Private Helpers ─────────────────────────────────────────
+
+    /**
+     * Simple text-based compaction when Ollama is unavailable.
+     * Keeps last few lines of previous context + summary of new transcript.
+     */
+    private simpleCompact(previousContext: string, newTranscript: string): string {
+        const prevLines = previousContext ? previousContext.split('\n').slice(-5).join('\n') : '';
+        const newLines = newTranscript.split('\n');
+        const summary = newLines.length > 10
+            ? `[${newLines.length} messages exchanged covering: ${newLines.slice(0, 3).join('; ')}...]`
+            : newLines.join('\n');
+
+        return [prevLines, summary].filter(Boolean).join('\n---\n').slice(-2000);
+    }
+
+    /**
+     * Call Ollama for context summarization.
+     */
+    private async callOllama(prompt: string): Promise<string> {
+        const url = `${this.compactionConfig.ollamaUrl}/api/generate`;
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: this.compactionConfig.ollamaModel,
+                prompt,
+                stream: false,
+                options: { temperature: 0.3, num_predict: 1024 },
+            }),
+        });
+
+        if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
+        const json = await res.json() as { response: string };
+        return json.response;
+    }
+
+    /**
+     * Parse JSON from LLM response (handles markdown code blocks).
+     */
+    private parseJsonResponse(text: string): any {
+        // Strip thinking tags if present
+        let cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        // Strip markdown code blocks
+        cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+        try {
+            return JSON.parse(cleaned);
+        } catch {
+            // Try to extract JSON object
+            const match = cleaned.match(/\{[\s\S]*\}/);
+            if (match) {
+                try { return JSON.parse(match[0]); } catch { /* ignore */ }
+            }
+            return null;
+        }
+    }
 
     private generateSummary(content: string, maxLength: number = 200): string {
         // Remover markdown

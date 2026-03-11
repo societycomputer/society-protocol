@@ -33,6 +33,9 @@ export {
   type KnowledgeSpace,
   type HybridLogicalClock,
   type VectorClockOrder,
+  type ChatMessage,
+  type ContextCompactionConfig,
+  type CollectiveUnconscious,
 } from './knowledge.js';
 export { SkillsEngine } from './skills/engine.js';
 export { SecurityManager } from './security.js';
@@ -41,6 +44,7 @@ export { ProactiveMissionEngine } from './proactive/engine.js';
 export { P2PSwarmRegistry } from './proactive/swarm-registry.js';
 export { SwarmScheduler } from './proactive/scheduler.js';
 export { MissionCheckpointService } from './proactive/checkpoints.js';
+export { ProactiveWatcher, type ProactiveWatcherConfig, type ProactiveDecision } from './proactive/watcher.js';
 export { ResearchWorkerNode } from './workers/research-worker.js';
 export { Planner } from './planner.js';
 export {
@@ -56,7 +60,8 @@ export { CapsuleExporter } from './capsules.js';
 export { SocietyMCPServer } from './mcp/server.js';
 export { MCPBridge } from './bridges/mcp-bridge.js';
 export { A2ABridge } from './bridges/a2a-bridge.js';
-export { registerNode, resolveNode, stopHeartbeat } from './registry.js';
+export { registerNode, resolveNode, stopHeartbeat, generateFriendlyName } from './registry.js';
+export { ContentStore, type FileManifest } from './content-store.js';
 
 // Gateway — Demand-driven agent spawning
 export { DemandSpawner, DEFAULT_SPAWN_CONFIG } from './gateway/demand-spawner.js';
