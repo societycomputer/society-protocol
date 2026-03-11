@@ -1,0 +1,26 @@
+{
+  "version": "1.0.0",
+  "circuits": [
+    {
+      "id": "age_over_18",
+      "version": "1.1.0",
+      "acir": "age_over_18.acir",
+      "vk": "age_over_18.vk",
+      "hash": "sha256:2b16f2d32aa4f8fd22d0eb3fa0f89f5bc5ffad8eb10fcfb8f434246f4b69b8b1"
+    },
+    {
+      "id": "domain_membership",
+      "version": "1.1.0",
+      "acir": "domain_membership.acir",
+      "vk": "domain_membership.vk",
+      "hash": "sha256:8f53ff9b8aab8886b49caeb6fd44974606ed95d68a3678a29f74a8b44f7f08f5"
+    },
+    {
+      "id": "capability_possession",
+      "version": "1.1.0",
+      "acir": "capability_possession.acir",
+      "vk": "capability_possession.vk",
+      "hash": "sha256:27437e165fe9936a28575b3601df4f99ad63ebb2ec53398f8df563ea76634b47"
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+{
+    "name": "society-core",
+    "version": "1.0.0",
+    "description": "Society Protocol v1.0 — State-of-the-Art P2P Multi-Agent Collaboration",
+    "type": "module",
+    "main": "dist/lib.js",
+    "types": "dist/lib.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/lib.d.ts",
+            "import": "./dist/lib.js"
+        },
+        "./sdk": {
+            "types": "./dist/sdk/index.d.ts",
+            "import": "./dist/sdk/index.js"
+        },
+        "./package.json": "./package.json"
+    },
+    "bin": {
+        "society": "dist/index.js"
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsx src/index.ts",
+        "start": "node dist/index.js",
+        "start:node": "node dist/index.js node",
+        "test": "vitest run test/unit test/integration",
+        "test:all": "vitest run",
+        "test:unit": "vitest run test/unit",
+        "test:integration": "vitest run test/integration",
+        "test:benchmark": "vitest run test/benchmark --reporter=verbose",
+        "test:coverage": "vitest run --coverage",
+        "test:manual": "tsx scripts/test-manual.ts",
+        "test:watch": "vitest",
+        "lint": "tsc --noEmit",
+        "lint:test-types": "tsc -p tsconfig.test.json --noEmit",
+        "clean": "rm -rf dist",
+        "wasm:build": "cd ../crates/society-crypto && wasm-pack build --target web --out-dir ../../core/src/wasm"
+    },
+    "keywords": [
+        "p2p",
+        "multi-agent",
+        "collaboration",
+        "libp2p",
+        "gossipsub",
+        "dag",
+        "workflow",
+        "ai"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "@automerge/automerge": "^3.2.4",
+        "@chainsafe/libp2p-gossipsub": "^14.1.2",
+        "@chainsafe/libp2p-noise": "^17.0.0",
+        "@chainsafe/libp2p-yamux": "^8.0.1",
+        "@libp2p/crypto": "^5.0.10",
+        "@libp2p/identify": "^4.0.11",
+        "@libp2p/kad-dht": "^16.1.4",
+        "@libp2p/mdns": "^12.0.12",
+        "@libp2p/peer-id": "^5.0.9",
+        "@libp2p/ping": "^3.0.11",
+        "@libp2p/tcp": "^11.0.11",
+        "@libp2p/websockets": "^10.1.4",
+        "@modelcontextprotocol/sdk": "^1.27.1",
+        "@noble/ed25519": "^2.2.3",
+        "@noble/hashes": "^1.7.1",
+        "archiver": "^7.0.1",
+        "better-sqlite3": "^11.8.1",
+        "commander": "^13.1.0",
+        "express": "^5.2.1",
+        "it-pipe": "^3.0.1",
+        "libp2p": "^3.1.4",
+        "multiformats": "^13.3.2",
+        "sqlite-vec": "^0.1.7-alpha.2",
+        "uint8arrays": "^5.1.0",
+        "ulid": "^2.3.0",
+        "yaml": "^2.8.2"
+    },
+    "devDependencies": {
+        "@types/archiver": "^7.0.0",
+        "@types/better-sqlite3": "^7.6.13",
+        "@types/express": "^5.0.6",
+        "@types/node": "^22.13.5",
+        "@vitest/coverage-v8": "^3.2.4",
+        "c8": "^11.0.0",
+        "tsx": "^4.19.3",
+        "typescript": "^5.8.2",
+        "vitest": "^3.0.7"
+    },
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE"
+    ],
+    "engines": {
+        "node": ">=20.0.0"
+    }
+}

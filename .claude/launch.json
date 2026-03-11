@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "society-core",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "src/index.ts", "node", "--name", "DevAgent", "--room", "dev"],
+      "port": 8080,
+      "cwd": "core"
+    },
+    {
+      "name": "society-docs",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 4321,
+      "cwd": "docs"
+    }
+    ,{
+      "name": "society-site",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", ".", "-p", "3001", "--no-clipboard"],
+      "port": 3001,
+      "cwd": "site"
+    }
+  ]
+}

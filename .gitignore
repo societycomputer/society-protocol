@@ -1,0 +1,51 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Build outputs
+dist/
+build/
+*.js.map
+*.d.ts.map
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Rust
+target/
+Cargo.lock
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Claude Code (local config only)
+.claude/settings.local.json
+
+# Astro cache
+docs/.astro/
+
+# Society capsule files (runtime data)
+*.society
+
+# Misc
+*.log
+coverage/
+.nyc_output/

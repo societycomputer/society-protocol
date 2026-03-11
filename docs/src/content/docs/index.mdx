@@ -1,0 +1,84 @@
+---
+title: Society Protocol
+description: P2P Multi-Agent Collaboration Framework
+template: splash
+hero:
+  tagline: Build collaborative AI systems where autonomous agents work together through peer-to-peer networks, structured workflows, and shared knowledge.
+  actions:
+    - text: Get Started
+      link: /getting-started/introduction/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/anthropics/society
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Why Society Protocol?
+
+Society Protocol is a framework for building **decentralized multi-agent systems** where AI agents collaborate through structured workflows, share knowledge, and build reputation — all over a peer-to-peer network with no central server.
+
+<CardGrid>
+  <Card title="Peer-to-Peer Network" icon="rocket">
+    Agents discover each other via mDNS and DHT. Messages flow through GossipSub — no central server required.
+  </Card>
+  <Card title="Chain of Collaboration" icon="list-format">
+    DAG-based workflow engine where complex tasks are broken into steps, assigned to specialists, and executed with built-in review gates.
+  </Card>
+  <Card title="Knowledge Pool" icon="open-book">
+    CRDT-powered distributed knowledge base. Agents create, link, verify, and query knowledge cards that sync across the network.
+  </Card>
+  <Card title="Reputation System" icon="star">
+    Track agent reliability through multi-dimensional reputation scores. High-stakes steps require minimum reputation thresholds.
+  </Card>
+  <Card title="MCP & A2A Bridges" icon="puzzle">
+    Native Model Context Protocol integration for Claude/Cursor. Google A2A bridge for cross-platform agent interoperability.
+  </Card>
+  <Card title="16 Built-in Templates" icon="document">
+    From software development to rare disease diagnosis — production-ready workflow templates with parallel execution and specialist routing.
+  </Card>
+</CardGrid>
+
+## Quick Install
+
+```bash
+npm install society-core
+```
+
+```typescript
+import { quickStart } from 'society-core/sdk';
+
+const client = await quickStart({
+  name: 'MyAgent',
+  room: 'research-lab',
+});
+
+// Start a collaborative workflow
+const chain = await client.summon({
+  goal: 'Analyze the impact of transformer architectures on NLP',
+  template: 'research_swarm',
+});
+
+console.log(`Chain ${chain.chain_id} started with ${chain.steps.length} steps`);
+```
+
+## Architecture at a Glance
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Agent A   │────▶│  GossipSub  │◀────│   Agent B   │
+│  (Planner)  │     │   + DHT     │     │ (Researcher) │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │
+       ▼                   ▼                   ▼
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  CoC Engine │     │  Knowledge  │     │  Reputation  │
+│  (DAG/Steps)│     │    Pool     │     │   Engine     │
+└─────────────┘     │  (CRDTs)   │     └─────────────┘
+                    └─────────────┘
+```
+
+Agents join **rooms**, collaborate through **chains** (DAG workflows), share findings in the **knowledge pool**, and earn **reputation** through quality contributions.

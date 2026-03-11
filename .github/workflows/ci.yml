@@ -1,0 +1,151 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: core/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: core
+        run: npm ci
+      
+      - name: Run linter
+        working-directory: core
+        run: |
+          npm run lint
+          npm run lint:test-types
+
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: core/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: core
+        run: npm ci
+      
+      - name: Run unit tests
+        working-directory: core
+        run: npm run test:unit
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          directory: core/coverage
+          fail_ci_if_error: false
+
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: core/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: core
+        run: npm ci
+      
+      - name: Run integration tests
+        working-directory: core
+        run: npm run test:integration
+
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: core/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: core
+        run: npm ci
+      
+      - name: Run benchmarks
+        working-directory: core
+        run: npm run test:benchmark
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: core/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: core
+        run: npm ci
+      
+      - name: Build TypeScript
+        working-directory: core
+        run: npm run build
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: core/dist/
+
+  wasm:
+    name: Build WASM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+      
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      
+      - name: Build WASM
+        working-directory: crates/society-crypto
+        run: wasm-pack build --target web --out-dir ../../core/src/wasm
+      
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm
+          path: core/src/wasm/
