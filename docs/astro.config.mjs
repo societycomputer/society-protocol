@@ -36,6 +36,7 @@ export default defineConfig({
             { label: 'Knowledge Pool', slug: 'concepts/knowledge-pool' },
             { label: 'Reputation System', slug: 'concepts/reputation' },
             { label: 'Security & Privacy', slug: 'concepts/security' },
+            { label: 'Societies & Federations', slug: 'concepts/societies' },
             { label: 'Templates', slug: 'concepts/templates' },
             { label: 'Latent Space', slug: 'concepts/latent-space' },
             { label: 'Swarm Coordination', slug: 'concepts/swarm-coordination' },
