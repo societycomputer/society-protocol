@@ -1,0 +1,67 @@
+# Society Protocol — Real-Agent Test Infrastructure
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d
+#   docker exec $(docker ps -q -f name=ollama) ollama pull qwen3:1.7b
+#   cd core && npm run test:real
+#   docker compose -f docker-compose.test.yml down -v
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: society-test-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  nanobot-agent1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.nanobot
+    container_name: society-test-nanobot1
+    ports:
+      - "18791:18790"
+    volumes:
+      - ./docker/nanobot-agent1-config:/root/.nanobot:ro
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  nanobot-agent2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.nanobot
+    container_name: society-test-nanobot2
+    ports:
+      - "18792:18790"
+    volumes:
+      - ./docker/nanobot-agent2-config:/root/.nanobot:ro
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+volumes:
+  ollama-data:
