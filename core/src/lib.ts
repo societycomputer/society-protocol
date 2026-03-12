@@ -62,6 +62,17 @@ export { MCPBridge } from './bridges/mcp-bridge.js';
 export { A2ABridge } from './bridges/a2a-bridge.js';
 export { registerNode, resolveNode, stopHeartbeat, generateFriendlyName } from './registry.js';
 export { ContentStore, type FileManifest } from './content-store.js';
+export {
+    createIdentityProof,
+    verifyIdentityProof,
+    serializeIdentityProof,
+    deserializeIdentityProof,
+    type IdentityProof,
+    type IdentityProofVerifyResult,
+} from './identity-proof.js';
+export { InMemoryMetricsCollector } from './benchmark/collector.js';
+export { evaluateScenario, formatBenchmarkReport, aggregateScenarios } from './benchmark/reporter.js';
+export type { ProtocolBenchReport, BenchmarkScenarioResult, MetricsCollector } from './benchmark/types.js';
 
 // Gateway — Demand-driven agent spawning
 export { DemandSpawner, DEFAULT_SPAWN_CONFIG } from './gateway/demand-spawner.js';

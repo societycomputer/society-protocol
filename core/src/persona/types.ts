@@ -3,7 +3,7 @@ export type PersonaNodeId = string;
 export type PersonaEdgeId = string;
 export type PersonaClaimId = string;
 export type ZkProofId = string;
-export type ZkCircuitId = 'age_over_18' | 'domain_membership' | 'capability_possession';
+export type ZkCircuitId = 'age_over_18' | 'domain_membership' | 'capability_possession' | 'did_ownership';
 export type PersonaDomain =
     | 'health'
     | 'work'

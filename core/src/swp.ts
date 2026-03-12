@@ -112,6 +112,8 @@ export type MessageType =
     | 'artifact.offer'
     | 'artifact.request'
     | 'artifact.block'
+    // Identity Proofs (Schnorr PoK)
+    | 'identity.proof'
     // System
     | 'system.ping'
     | 'system.pong'

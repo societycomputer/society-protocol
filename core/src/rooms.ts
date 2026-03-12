@@ -33,6 +33,7 @@ import {
 } from './swp.js';
 import { Storage } from './storage.js';
 import { type KnowledgePool, type ChatMessage } from './knowledge.js';
+import { verifyIdentityProof, createIdentityProof, type IdentityProof } from './identity-proof.js';
 import { ulid } from 'ulid';
 import { EventEmitter } from 'events';
 
@@ -69,6 +70,7 @@ export class RoomManager extends EventEmitter {
     private heartbeatIntervals = new Map<string, ReturnType<typeof setInterval>>();
     private joinedRooms = new Set<string>();
     private encryptedRooms = new Set<string>();
+    private verifiedPeers = new Map<string, Map<string, IdentityProof>>();
     private knowledgePool?: KnowledgePool;
     private presenceBroadcastInterval?: ReturnType<typeof setInterval>;
 
@@ -523,6 +525,10 @@ export class RoomManager extends EventEmitter {
                 this.emit('artifact:event', roomId, envelope);
                 break;
 
+            case 'identity.proof':
+                this.handleIdentityProof(roomId, envelope);
+                break;
+
             default:
                 // Unknown message type
                 this.emit('message:unknown', roomId, envelope);
@@ -686,5 +692,46 @@ export class RoomManager extends EventEmitter {
         }
 
         this.joinedRooms.clear();
+    }
+
+    // ─── Identity Proof (Schnorr PoK) ──────────────────────────
+
+    /**
+     * Broadcast a ZKP identity proof to a room.
+     * Called automatically on room join.
+     */
+    async broadcastIdentityProof(roomId: string): Promise<void> {
+        const proof = createIdentityProof(this.identity, roomId);
+        const envelope = createEnvelope(
+            this.identity,
+            'identity.proof',
+            roomId,
+            proof as unknown as Record<string, unknown>
+        );
+        const data = serializeEnvelope(envelope);
+        await this.p2p.publish(chatTopic(roomId), data);
+    }
+
+    private handleIdentityProof(roomId: string, envelope: SwpEnvelope): void {
+        const proof = envelope.body as unknown as IdentityProof;
+        if (!proof.did || !proof.proof) return;
+
+        const result = verifyIdentityProof(proof);
+        if (result.valid) {
+            if (!this.verifiedPeers.has(roomId)) {
+                this.verifiedPeers.set(roomId, new Map());
+            }
+            this.verifiedPeers.get(roomId)!.set(proof.did, proof);
+            this.emit('identity:verified', { roomId, did: proof.did });
+        } else {
+            this.emit('identity:rejected', { roomId, did: proof.did, reason: result.reason });
+        }
+    }
+
+    /**
+     * Check if a peer has a verified identity in a room.
+     */
+    isVerifiedPeer(roomId: string, did: string): boolean {
+        return this.verifiedPeers.get(roomId)?.has(did) ?? false;
     }
 }

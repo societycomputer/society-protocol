@@ -108,6 +108,7 @@ export class ReputationEngine extends EventEmitter {
     private config: ReputationConfig;
     private cache = new Map<string, ReputationScore>();
     private dirtyDids = new Set<string>();
+    private identityVerified = new Set<string>();
 
     constructor(
         private storage: Storage,
@@ -271,7 +272,7 @@ export class ReputationEngine extends EventEmitter {
         const overall = this.calculateOverallScore(metrics, specialties, reviews);
 
         // Determine trust tier
-        const trust_tier = this.calculateTrustTier(overall, metrics);
+        const trust_tier = this.calculateTrustTier(overall, metrics, did);
 
         return {
             did,
@@ -443,11 +444,16 @@ export class ReputationEngine extends EventEmitter {
 
     private calculateTrustTier(
         overall: number,
-        metrics: ReputationMetrics
+        metrics: ReputationMetrics,
+        did?: string
     ): ReputationScore['trust_tier'] {
         const totalTasks = metrics.tasks_completed + metrics.tasks_failed;
+        const isVerified = did ? this.identityVerified.has(did) : false;
 
-        if (totalTasks < 3 || overall < 0.3) return 'unverified';
+        if (totalTasks < 3 || overall < 0.3) {
+            // ZKP-verified identity gets at least bronze
+            return isVerified ? 'bronze' : 'unverified';
+        }
         if (overall < 0.5) return 'bronze';
         if (overall < 0.7) return 'silver';
         if (overall < 0.9) return 'gold';
@@ -597,6 +603,23 @@ export class ReputationEngine extends EventEmitter {
         } catch (err) {
             this.emit('sync:error', { error: err, from });
         }
+    }
+
+    /**
+     * Record that a DID has verified identity via ZKP (Schnorr PoK).
+     * Verified identities get a minimum trust tier of 'bronze'.
+     */
+    recordIdentityVerification(did: string): void {
+        this.identityVerified.add(did);
+        this.dirtyDids.add(did);
+        this.emit('identity:verified', { did });
+    }
+
+    /**
+     * Check if a DID has a verified identity.
+     */
+    hasVerifiedIdentity(did: string): boolean {
+        return this.identityVerified.has(did);
     }
 
     private startPeriodicSync(): void {

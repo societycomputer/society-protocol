@@ -39,6 +39,14 @@ const DEFAULT_CIRCUITS: ZkCircuitDefinition[] = [
         privateInputs: ['capabilityToken'],
         active: true,
     },
+    {
+        circuitId: 'did_ownership',
+        version: '1.0.0',
+        description: 'Prove ownership of a DID via Schnorr PoK without exposing private key.',
+        publicInputs: ['did', 'challenge', 'roomId'],
+        privateInputs: ['privateKey'],
+        active: true,
+    },
 ];
 
 const ARTIFACTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'artifacts');
