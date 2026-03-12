@@ -62,6 +62,7 @@ export default defineConfig({
             { label: 'OpenClaw Swarm', slug: 'guides/openclaw-swarm' },
             { label: 'Nanobot Swarm', slug: 'guides/nanobot-swarm' },
             { label: 'Claude Code Dev Team', slug: 'guides/claude-code-team' },
+            { label: 'BotBrain Robot Fleet', slug: 'guides/botbrain-fleet' },
             { label: 'IoT Sensor Network', slug: 'guides/iot-sensor-network' },
           ],
         },
