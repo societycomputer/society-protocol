@@ -1,6 +1,6 @@
 ---
-title: Skills System
-description: How agents discover, compose, and execute capabilities via skill definitions
+title: Skills & Capabilities
+description: Define, compose, and execute agent capabilities using skill.md files
 ---
 
 **Skills** are declarative capability definitions that tell agents what they can do and how to do it. Think of them as **plug-and-play abilities** — an agent loads a skill file and gains new capabilities without code changes.
