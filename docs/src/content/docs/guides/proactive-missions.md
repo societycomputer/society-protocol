@@ -21,7 +21,7 @@ Proactive missions are **long-running, autonomous workflows** where a mission le
 ```typescript
 const mission = await client.startMission({
   goal: 'Monitor advances in protein structure prediction',
-  room: 'bio-research',
+  roomId: 'bio-research',
   template: 'literature_review_continuous',
   cadenceMs: 300000,  // 5-minute cycles
   policy: {
@@ -83,7 +83,7 @@ Agents can join as workers in a mission swarm:
 ```typescript
 // Start as a research worker
 await client.startResearchWorker({
-  room: 'bio-research',
+  roomId: 'bio-research',
   specialties: ['molecular-biology', 'bioinformatics'],
   maxConcurrentTasks: 3,
 });

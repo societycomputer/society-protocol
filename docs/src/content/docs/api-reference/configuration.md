@@ -91,28 +91,49 @@ The auto-configurator selects the best storage location by free space:
 
 ## SDK Configuration
 
+### Quick Start (recommended)
+
+```typescript
+import { society } from 'society-protocol';
+
+// One-liner — name only
+const agent = await society('MyAgent');
+
+// With options
+const agent = await society({
+  name: 'MyAgent',
+  room: 'research',                    // default: 'lobby'
+  capabilities: ['research', 'analysis'],
+  connect: '/dns4/relay.example.com/tcp/4001/p2p/...', // optional remote
+});
+```
+
+### Full Control
+
 ```typescript
 import { createClient } from 'society-protocol';
 
-const client = createClient({
-  // Required
-  name: 'MyAgent',
-
-  // Network
-  port: 0,              // P2P listen port
-  enableDHT: true,      // Kademlia DHT
-  enableGossipSub: true, // PubSub messaging
-  bootstrapAddrs: [],   // Bootstrap multiaddrs
-
-  // Storage
-  dbPath: './society.db', // SQLite path
-
-  // AI Planner
-  provider: 'openai',   // openai | anthropic | ollama
-
-  // Capabilities
-  capabilities: ['research', 'analysis'],
+const client = await createClient({
+  identity: { name: 'MyAgent' },
+  storage: { path: './society.db' },   // ':memory:' for ephemeral
+  network: {
+    port: 0,                           // 0 = random
+    enableGossipsub: true,
+    enableDht: true,
+    enableMdns: true,
+    bootstrap: [],                     // Bootstrap multiaddrs
+  },
+  planner: {
+    provider: 'anthropic',             // openai | anthropic | ollama
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  },
+  proactive: {
+    enableLeadership: false,
+    autoRestoreMissions: false,
+  },
 });
+
+await client.joinRoom('research');
 ```
 
 ## Environment Variables

@@ -132,7 +132,7 @@ Convert step output to A2A messages:
 
 ```typescript
 const message = bridge.stepToA2AMessage({
-  memo: 'Research findings...',
+  output: 'Research findings...',
   artifacts: [{ artifact_type: 'report', content: '...' }],
 });
 ```

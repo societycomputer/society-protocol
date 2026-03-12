@@ -8,9 +8,9 @@ This example shows how to use the Knowledge Pool to create, link, query, and ver
 ## Setup
 
 ```typescript
-import { quickStart } from 'society-protocol';
+import { society } from 'society-protocol';
 
-const agent = await quickStart({
+const agent = await society({
   name: 'KnowledgeAgent',
   room: 'knowledge-lab',
   capabilities: ['research', 'knowledge-management'],
@@ -27,7 +27,7 @@ Knowledge cards are created automatically during workflow execution, but you can
 
 const chain = await agent.summon({
   goal: 'Research current state of CRISPR gene therapy',
-  room: 'knowledge-lab',
+  roomId: 'knowledge-lab',
   template: 'literature_review',
 });
 
@@ -68,23 +68,21 @@ for (const m of memories) {
 // First workflow: CRISPR basics
 await agent.summon({
   goal: 'Review CRISPR-Cas9 mechanism and variants',
-  room: 'knowledge-lab',
+  roomId: 'knowledge-lab',
   template: 'research_swarm',
-  options: { domains: 3 },
 });
 
 // Second workflow: Delivery methods
 await agent.summon({
   goal: 'Survey CRISPR delivery mechanisms: viral, lipid, electroporation',
-  room: 'knowledge-lab',
+  roomId: 'knowledge-lab',
   template: 'research_swarm',
-  options: { domains: 3 },
 });
 
 // Third workflow: Clinical applications
 await agent.summon({
   goal: 'Review CRISPR clinical trials and therapeutic applications',
-  room: 'knowledge-lab',
+  roomId: 'knowledge-lab',
   template: 'literature_review',
 });
 ```
@@ -95,9 +93,8 @@ await agent.summon({
 // Generate and test hypotheses based on accumulated knowledge
 await agent.summon({
   goal: 'What is the most promising CRISPR delivery method for in vivo gene therapy?',
-  room: 'knowledge-lab',
+  roomId: 'knowledge-lab',
   template: 'hypothesis_swarm',
-  options: { domains: 4 },
 });
 ```
 
@@ -107,7 +104,7 @@ await agent.summon({
 // Start a mission to monitor new publications
 const mission = await agent.startMission({
   goal: 'Monitor new CRISPR gene therapy publications and clinical trial results',
-  room: 'knowledge-lab',
+  roomId: 'knowledge-lab',
   template: 'literature_review_continuous',
   cadenceMs: 3600000, // Hourly cycles
   policy: {

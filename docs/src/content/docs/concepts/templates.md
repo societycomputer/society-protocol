@@ -15,9 +15,8 @@ Templates are pre-built workflow patterns that generate DAGs for common tasks. I
 ```typescript
 const chain = await client.summon({
   goal: 'Research CRISPR delivery mechanisms',
-  room: 'bio-lab',
+  roomId: 'bio-lab',
   template: 'research_swarm',
-  options: { domains: 4 },  // 4 parallel research tracks
 });
 ```
 

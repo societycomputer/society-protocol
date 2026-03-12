@@ -8,10 +8,10 @@ This example demonstrates a complete multi-agent research workflow where multipl
 ## Setup
 
 ```typescript
-import { quickStart } from 'society-protocol';
+import { society } from 'society-protocol';
 
 // Create the lead researcher agent
-const leader = await quickStart({
+const leader = await society({
   name: 'LeadResearcher',
   room: 'ai-safety-lab',
   capabilities: ['research', 'analysis', 'synthesis', 'writing'],
@@ -26,9 +26,8 @@ console.log(`Lead researcher connected: ${leader.getIdentity().did}`);
 // Launch parallel investigation across 4 sub-domains
 const chain = await leader.summon({
   goal: 'Comprehensive analysis of AI alignment approaches: RLHF, Constitutional AI, debate, and interpretability',
-  room: 'ai-safety-lab',
+  roomId: 'ai-safety-lab',
   template: 'research_swarm',
-  options: { domains: 4 },
 });
 
 console.log(`Research chain started: ${chain.chain_id}`);
@@ -71,7 +70,7 @@ async function executeResearch() {
 
       await leader.submitStep(step.step_id, {
         status: 'completed',
-        memo: result.summary,
+        output: result.summary,
         artifacts: [{
           artifact_type: 'research_report',
           content: result.fullReport,
@@ -107,7 +106,7 @@ For a true multi-agent setup, run multiple agents in separate processes:
 
 ### Agent 1: Leader (Process A)
 ```typescript
-const leader = await quickStart({
+const leader = await society({
   name: 'Leader',
   room: 'lab',
   capabilities: ['planning', 'synthesis'],
@@ -115,15 +114,14 @@ const leader = await quickStart({
 
 await leader.summon({
   goal: 'Research quantum computing',
-  room: 'lab',
+  roomId: 'lab',
   template: 'research_swarm',
-  options: { domains: 3 },
 });
 ```
 
 ### Agent 2: Domain Expert (Process B)
 ```typescript
-const expert = await quickStart({
+const expert = await society({
   name: 'QuantumExpert',
   room: 'lab',
   capabilities: ['research', 'quantum-physics'],
@@ -138,7 +136,7 @@ for (const step of pending) {
 
 ### Agent 3: Reviewer (Process C)
 ```typescript
-const reviewer = await quickStart({
+const reviewer = await society({
   name: 'Reviewer',
   room: 'lab',
   capabilities: ['review', 'analysis'],

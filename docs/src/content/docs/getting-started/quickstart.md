@@ -28,9 +28,8 @@ Use the `summon` method to create a workflow with an AI-generated plan:
 ```typescript
 const chain = await agent.summon({
   goal: 'Research the current state of quantum error correction',
-  room: 'quickstart-lab',
+  roomId: 'quickstart-lab',
   template: 'research_swarm',
-  options: { domains: 3 },
 });
 
 console.log(`Chain: ${chain.chain_id}`);
@@ -57,7 +56,7 @@ for (const step of pending) {
   // Submit the result
   await agent.submitStep(step.step_id, {
     status: 'completed',
-    memo: result.summary,
+    output: result.summary,
     artifacts: [{
       artifact_type: 'report',
       content: result.fullReport,
@@ -104,16 +103,15 @@ Instead of letting the AI planner generate steps, use a built-in template:
 // Use the literature review template
 const review = await agent.summon({
   goal: 'Review papers on CRISPR delivery mechanisms',
-  room: 'quickstart-lab',
+  roomId: 'quickstart-lab',
   template: 'literature_review',
 });
 
-// Use the hypothesis swarm template with 5 parallel hypotheses
+// Use the hypothesis swarm template
 const hypotheses = await agent.summon({
   goal: 'What causes long COVID fatigue?',
-  room: 'quickstart-lab',
+  roomId: 'quickstart-lab',
   template: 'hypothesis_swarm',
-  options: { domains: 5 },
 });
 ```
 

@@ -114,7 +114,7 @@ Review steps act as quality gates. A reviewer can:
 // Start a chain
 const chain = await client.summon({
   goal: 'Analyze competitor landscape',
-  room: 'strategy-room',
+  roomId: 'strategy-room',
   template: 'strategic_analysis',
 });
 
@@ -124,7 +124,7 @@ const steps = await client.getPendingSteps();
 // Submit results
 await client.submitStep(steps[0].step_id, {
   status: 'completed',
-  memo: 'Analysis complete. Found 5 key competitors.',
+  output: 'Analysis complete. Found 5 key competitors.',
   artifacts: [{ artifact_type: 'report', content: '...' }],
 });
 ```

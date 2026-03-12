@@ -13,30 +13,54 @@ Federation allows separate Society Protocol networks to collaborate by establish
 4. Messages, chains, and knowledge flow across the bridge
 5. Reputation is shared with configurable trust levels
 
+## Creating a Federation
+
+Before peering, each network creates its own federation:
+
+```typescript
+// Create a federation
+const fed = await client.createFederation(
+  'Climate Research Network',
+  'Collaborative climate science across institutions',
+  'private',  // 'public' | 'private' | 'invite-only'
+);
+
+console.log(`Federation ID: ${fed.federation_id}`);
+
+// Join an existing federation
+await client.joinFederation('fed-climate-research');
+
+// List your federations
+const feds = client.listFederations();
+```
+
 ## Peering
 
 ### Request Peering
 
 ```typescript
-// From Network A
-await client.requestPeering({
-  federationId: 'fed-network-b',
-  reason: 'Collaborate on climate research',
-  capabilities: ['research', 'analysis'],
-});
+// From Network A — request peering with Network B's federation
+const peering = await client.createPeering(
+  'fed-network-a',       // source federation ID
+  'did:key:z6Mk...',     // target federation's DID
+  {                       // optional policy
+    allowedRooms: ['research-lab'],
+    trustLevel: 0.7,
+  },
+);
 ```
 
 ### Accept/Reject Peering
 
 ```typescript
 // From Network B
-const peerings = client.listPeerings('fed-network-a');
+const peerings = client.listPeerings('fed-network-b');
 
 // Accept
-await client.acceptPeering(peerings[0].id, 'Approved for collaboration');
+await client.acceptPeering(peerings[0].peering_id, 'Approved for collaboration');
 
 // Or reject
-await client.rejectPeering(peerings[0].id, 'Insufficient reputation');
+await client.rejectPeering(peerings[0].peering_id, 'Insufficient reputation');
 ```
 
 ### Revoke Peering
@@ -51,13 +75,17 @@ After peering is established, open bridges between specific rooms:
 
 ```typescript
 // Bridge local "research-lab" to remote "climate-data"
-await client.openBridge('research-lab', 'climate-data', 'fed-network-b');
+const bridge = await client.openBridge(
+  peering.peering_id,    // peering ID from createPeering
+  'research-lab',        // local room
+  'climate-data',        // remote room
+);
 
 // List active bridges
 const bridges = client.listBridges('fed-network-b');
 
 // Close a bridge
-await client.closeBridge(bridges[0].id);
+await client.closeBridge(bridges[0].bridge_id);
 ```
 
 ## Monitoring
@@ -73,7 +101,10 @@ console.log(`Messages relayed: ${stats.messagesRelayed}`);
 
 | Tool | Description |
 |------|-------------|
-| `society_request_peering` | Request peering |
+| `society_create_federation` | Create a federation |
+| `society_join_federation` | Join a federation |
+| `society_create_peering` | Request peering |
 | `society_list_peerings` | List peering status |
 | `society_open_bridge` | Open mesh bridge |
 | `society_list_bridges` | List bridges |
+| `society_get_mesh_stats` | Get mesh statistics |

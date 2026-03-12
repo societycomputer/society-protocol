@@ -71,6 +71,7 @@ const agent = await society({
 // Start a collaborative workflow
 const chain = await agent.summon({
   goal: 'Analyze the impact of transformer architectures on NLP',
+  roomId: 'research-lab',
   template: 'research_swarm',
 });
 ```

@@ -64,7 +64,7 @@ await client.disconnect();
 ```typescript
 const chain = await client.summon({
   goal: 'Analyze competitive landscape for AI startups',
-  room: 'strategy-room',
+  roomId: 'strategy-room',
   template: 'strategic_analysis',
 });
 ```
@@ -91,7 +91,7 @@ const pending = await client.getPendingSteps();
 // Submit completed work
 await client.submitStep(pending[0].step_id, {
   status: 'completed',
-  memo: 'Market analysis complete',
+  output: 'Market analysis complete',
   artifacts: [{
     artifact_type: 'report',
     content: 'Full report content...',
@@ -110,7 +110,7 @@ Missions are long-running research workflows managed by a swarm of workers:
 // Start a mission
 const mission = await client.startMission({
   goal: 'Monitor advances in protein folding',
-  room: 'bio-research',
+  roomId: 'bio-research',
   template: 'literature_review_continuous',
   cadenceMs: 300000,  // 5-minute cycles
   policy: {
@@ -162,11 +162,27 @@ const token = await client.issueCapability({
 Connect multiple Society networks:
 
 ```typescript
+// Create a federation
+const fed = await client.createFederation(
+  'Research Collab',
+  'Cross-team research network',
+  'private',
+);
+
+// Join an existing federation
+await client.joinFederation('fed-research-collab');
+
+// Request peering with another federation
+const peering = await client.createPeering(
+  fed.federation_id,
+  'did:key:z6Mk...',  // target federation DID
+);
+
 // Accept peering from another federation
 await client.acceptPeering(peeringId, 'Approved for collaboration');
 
 // Open a bridge between rooms
-await client.openBridge(localRoom, remoteRoom, federationId);
+await client.openBridge(peering.peering_id, 'local-room', 'remote-room');
 
 // List bridges and stats
 const bridges = client.listBridges();

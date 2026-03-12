@@ -12,7 +12,7 @@ Templates provide proven workflow patterns that generate DAGs automatically. Thi
 ```typescript
 const chain = await client.summon({
   goal: 'Review literature on mRNA vaccine delivery',
-  room: 'bio-lab',
+  roomId: 'bio-lab',
   template: 'literature_review',
 });
 ```
@@ -63,27 +63,25 @@ Use the `society_summon` tool with the `template` parameter.
 ### Configurable Options
 
 ```typescript
-// Research swarm with 5 parallel domains
+// Research swarm
 await client.summon({
   goal: 'Comprehensive AI safety review',
+  roomId: 'research',
   template: 'research_swarm',
-  options: { domains: 5 },
 });
 
-// Rare disease diagnosis with custom specialists
+// Rare disease diagnosis
 await client.summon({
   goal: 'Undiagnosed cardiac phenotype',
+  roomId: 'case-review',
   template: 'rare_disease_diagnosis',
-  options: {
-    specialists: ['cardiology', 'genetics', 'pathology', 'radiology'],
-  },
 });
 
-// Clinical trial with 8 sites
+// Clinical trial monitoring
 await client.summon({
   goal: 'Phase III oncology trial monitoring',
+  roomId: 'trials',
   template: 'clinical_trial_monitor',
-  options: { sites: 8 },
 });
 ```
 

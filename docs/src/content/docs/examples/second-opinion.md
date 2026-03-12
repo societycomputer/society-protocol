@@ -8,9 +8,9 @@ This example shows how to use the `second_opinion` template for a structured med
 ## Setup
 
 ```typescript
-import { quickStart } from 'society-protocol';
+import { society } from 'society-protocol';
 
-const agent = await quickStart({
+const agent = await society({
   name: 'MedicalReviewer',
   room: 'case-review',
   capabilities: [
@@ -26,7 +26,7 @@ const agent = await quickStart({
 ```typescript
 const chain = await agent.summon({
   goal: 'Review case: 45-year-old with progressive muscle weakness, elevated CK, and EMG showing myopathic changes. Current diagnosis: polymyositis. Family requests second opinion.',
-  room: 'case-review',
+  roomId: 'case-review',
   template: 'second_opinion',
 });
 
@@ -50,7 +50,7 @@ for (const step of pending) {
     case 'extract_clinical_data':
       await agent.submitStep(step.step_id, {
         status: 'completed',
-        memo: 'Extracted: Age 45, progressive proximal weakness 6mo, CK 5000 U/L, EMG myopathic, no rash, no malignancy screen.',
+        output: 'Extracted: Age 45, progressive proximal weakness 6mo, CK 5000 U/L, EMG myopathic, no rash, no malignancy screen.',
         artifacts: [{
           artifact_type: 'clinical_data',
           content: JSON.stringify({
@@ -67,7 +67,7 @@ for (const step of pending) {
     case 'differential_diagnosis':
       await agent.submitStep(step.step_id, {
         status: 'completed',
-        memo: 'Top differentials: 1) Polymyositis (current dx), 2) Inclusion body myositis, 3) Necrotizing autoimmune myopathy, 4) Muscular dystrophy (limb-girdle)',
+        output: 'Top differentials: 1) Polymyositis (current dx), 2) Inclusion body myositis, 3) Necrotizing autoimmune myopathy, 4) Muscular dystrophy (limb-girdle)',
         artifacts: [{
           artifact_type: 'differential_list',
           content: JSON.stringify([
@@ -92,11 +92,8 @@ For complex undiagnosed cases, use the `rare_disease_diagnosis` template which r
 ```typescript
 const chain = await agent.summon({
   goal: 'Undiagnosed: 8-year-old with episodic ataxia, myopathy, and lactic acidosis. Suspect mitochondrial disorder.',
-  room: 'case-review',
+  roomId: 'case-review',
   template: 'rare_disease_diagnosis',
-  options: {
-    specialists: ['genetics', 'neurology', 'metabolic', 'pathology'],
-  },
 });
 
 // This generates 11 steps including:
@@ -112,7 +109,7 @@ const chain = await agent.summon({
 ```typescript
 const chain = await agent.summon({
   goal: 'Analyze interactions for elderly patient on: metformin, lisinopril, atorvastatin, omeprazole, sertraline, aspirin, amlodipine, metoprolol',
-  room: 'pharmacy-review',
+  roomId: 'pharmacy-review',
   template: 'drug_interaction_analysis',
 });
 
