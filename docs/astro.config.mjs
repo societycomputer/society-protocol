@@ -56,6 +56,16 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Use Cases',
+          items: [
+            { label: 'RarasNet Hospital Network', slug: 'guides/rarasnet-hospital' },
+            { label: 'OpenClaw Swarm', slug: 'guides/openclaw-swarm' },
+            { label: 'Nanobot Swarm', slug: 'guides/nanobot-swarm' },
+            { label: 'Claude Code Dev Team', slug: 'guides/claude-code-team' },
+            { label: 'IoT Sensor Network', slug: 'guides/iot-sensor-network' },
+          ],
+        },
+        {
           label: 'API Reference',
           items: [
             { label: 'SocietyClient', slug: 'api-reference/society-client' },
