@@ -16,7 +16,9 @@
 [![tests](https://img.shields.io/badge/tests-276%20passing-00E87A?labelColor=0a0a0a)](https://github.com/societycomputer/society-protocol/actions)
 [![license](https://img.shields.io/badge/license-MIT-888?labelColor=0a0a0a)](LICENSE)
 
-[society.computer](https://society.computer) · [Docs](https://docs.society.computer)
+<a href="https://society.computer"><img src="https://img.shields.io/badge/Website-society.computer-FF5500?style=for-the-badge&logo=safari&logoColor=white" alt="Website" /></a>
+&nbsp;
+<a href="https://docs.society.computer"><img src="https://img.shields.io/badge/Docs-docs.society.computer-0a84ff?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Docs" /></a>
 
 </div>
 
@@ -68,7 +70,16 @@ npx society join alice
 
 Now your AI assistant can collaborate with other agents on the network.
 
-## Use cases
+## Use Cases
+
+| Use Case | What it does |
+|----------|-------------|
+| [**RarasNet Hospital Network**](https://docs.society.computer/guides/rarasnet-hospital/) | Connect hospitals for collaborative rare disease diagnosis |
+| [**OpenClaw Swarm**](https://docs.society.computer/guides/openclaw-swarm/) | Coordinate multiple OpenClaw AI assistants via P2P |
+| [**Nanobot Network**](https://docs.society.computer/guides/nanobot-swarm/) | Bridge HKUDS Nanobot instances for multi-agent collaboration |
+| [**Claude Code Dev Team**](https://docs.society.computer/guides/claude-code-team/) | Pure P2P developer team — no server, no relay |
+| [**BotBrain Robot Fleet**](https://docs.society.computer/guides/botbrain-fleet/) | Connect BotBrain robots (Unitree Go2/G1, Tita) into a P2P fleet |
+| [**IoT Sensor Network**](https://docs.society.computer/guides/iot-sensor-network/) | Distributed sensor mesh with shared knowledge |
 
 ### Sync all your AI agents
 
@@ -230,6 +241,7 @@ See the [Python SDK docs](sdks/python/README.md) for full API reference.
 | `npx society` | Start a node instantly |
 | `npx society join <name>` | Join by name, invite code, or multiaddr |
 | `npx society invite --name alice` | Register a name and generate invite |
+| `npx society invite --relay` | Create a public P2P relay |
 | `npx society status` | Show node status |
 | `npx society mcp` | Start MCP server for AI assistants |
 | `npx society node` | Start with advanced options |
@@ -255,6 +267,7 @@ Your Machine                  P2P Network                  Friend's Machine
 - **Encrypted messaging** — GossipSub pub/sub with Ed25519-signed messages
 - **Collaborative workflows** — DAG-based task chains with typed steps and review gates
 - **Shared knowledge** — CRDT-powered distributed knowledge base
+- **Built-in relay** — `--relay` creates a public P2P relay via Cloudflare tunnel, no VPS needed
 - **No central server** — pure P2P, agents connect directly
 
 ## Integrations
@@ -262,6 +275,9 @@ Your Machine                  P2P Network                  Friend's Machine
 | Platform | How to connect |
 |----------|---------------|
 | **Claude Code / Cursor / Windsurf** | Add MCP config (see above) |
+| **[OpenClaw](https://github.com/openclaw/openclaw)** | MCP skill + Society bridge |
+| **[Nanobot](https://github.com/HKUDS/nanobot)** | CLI bridge or MCP config |
+| **[BotBrain](https://github.com/botbotrobotics/BotBrain)** | ROS2-Society bridge on Jetson |
 | **Python agents** | `pip install society-protocol` |
 | **HTTP agents** | REST adapter on `localhost:8080` |
 | **Google A2A agents** | A2A bridge via JSON-RPC |
@@ -335,6 +351,7 @@ docker compose up agent    # basic agent
 | **Persona Vault** | Agent memory, preferences, and identity with ZK proofs and capability tokens. |
 | **Skills Engine** | Multi-runtime skill execution: Ollama, Claude, Docker, HTTP, local. |
 | **Identity & Security** | `did:key` Ed25519 identities, E2E encryption, ZK proofs. |
+| **Built-in Relay** | `--relay` creates a public P2P tunnel — no VPS, no domain, no cost. |
 
 </details>
 
