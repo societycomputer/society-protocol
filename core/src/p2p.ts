@@ -611,6 +611,12 @@ export class P2PNode extends EventEmitter {
 
                 buffer += new TextDecoder().decode(bytes);
 
+                // Guard against unbounded buffer growth (DoS protection)
+                if (buffer.length > 1_048_576) { // 1MB max
+                    buffer = '';
+                    continue;
+                }
+
                 // Process complete lines as they arrive (newline-delimited JSON)
                 let newlineIdx;
                 while ((newlineIdx = buffer.indexOf('\n')) !== -1) {

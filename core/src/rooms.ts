@@ -73,6 +73,7 @@ export class RoomManager extends EventEmitter {
     private verifiedPeers = new Map<string, Map<string, IdentityProof>>();
     private knowledgePool?: KnowledgePool;
     private presenceBroadcastInterval?: ReturnType<typeof setInterval>;
+    private replayCachePruneInterval?: ReturnType<typeof setInterval>;
 
     constructor(identity: Identity, p2p: P2PNode, storage: Storage) {
         super();
@@ -82,6 +83,11 @@ export class RoomManager extends EventEmitter {
 
         // Set up P2P message handlers
         this.setupP2PHandlers();
+
+        // Prune replay cache every hour to prevent unbounded growth
+        this.replayCachePruneInterval = setInterval(() => {
+            try { this.storage.pruneReplayCache(86400); } catch { /* ignore */ }
+        }, 3_600_000);
     }
 
     /**
@@ -685,6 +691,11 @@ export class RoomManager extends EventEmitter {
             clearInterval(interval);
         }
         this.heartbeatIntervals.clear();
+
+        // Stop replay cache pruning
+        if (this.replayCachePruneInterval) {
+            clearInterval(this.replayCachePruneInterval);
+        }
 
         // Leave all rooms
         for (const roomId of this.joinedRooms) {

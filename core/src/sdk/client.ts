@@ -145,111 +145,120 @@ export class SocietyClient extends EventEmitter {
     async connect(): Promise<void> {
         if (this.connected) return;
 
-        // Initialize storage
-        this.storage = new Storage(
-            this.config.storage?.path
-                ? { dbPath: this.config.storage.path }
-                : undefined
-        );
-
-        // Initialize or restore identity
-        if (this.config.identity?.did && this.config.identity?.privateKeyHex) {
-            this.identity = restoreIdentity(
-                this.config.identity.privateKeyHex,
-                this.config.identity.name
+        try {
+            // Initialize storage
+            this.storage = new Storage(
+                this.config.storage?.path
+                    ? { dbPath: this.config.storage.path }
+                    : undefined
             );
-        } else {
-            const existing = this.storage.getIdentity();
-            if (existing) {
+
+            // Initialize or restore identity
+            if (this.config.identity?.did && this.config.identity?.privateKeyHex) {
                 this.identity = restoreIdentity(
-                    existing.private_key_hex,
-                    this.config.identity?.name || existing.display_name
+                    this.config.identity.privateKeyHex,
+                    this.config.identity.name
                 );
             } else {
-                this.identity = generateIdentity(
-                    this.config.identity?.name || 'Anonymous'
-                );
-                const privHex = Buffer.from(this.identity.privateKey).toString('hex');
-                const pubHex = Buffer.from(this.identity.publicKey).toString('hex');
-                this.storage.saveIdentity(
-                    this.identity.did,
-                    privHex,
-                    pubHex,
-                    this.identity.displayName
-                );
+                const existing = this.storage.getIdentity();
+                if (existing) {
+                    this.identity = restoreIdentity(
+                        existing.private_key_hex,
+                        this.config.identity?.name || existing.display_name
+                    );
+                } else {
+                    this.identity = generateIdentity(
+                        this.config.identity?.name || 'Anonymous'
+                    );
+                    const privHex = Buffer.from(this.identity.privateKey).toString('hex');
+                    const pubHex = Buffer.from(this.identity.publicKey).toString('hex');
+                    this.storage.saveIdentity(
+                        this.identity.did,
+                        privHex,
+                        pubHex,
+                        this.identity.displayName
+                    );
+                }
             }
+
+            // Initialize reputation
+            this.reputation = new ReputationEngine(this.storage);
+
+            // Initialize P2P
+            this.p2p = new P2PNode();
+            await this.p2p.start({
+                port: this.config.network?.port,
+                bootstrapAddrs: this.config.network?.bootstrap,
+                enableGossipsub: this.config.network?.enableGossipsub ?? true,
+                enableDht: this.config.network?.enableDht ?? true,
+                enableMdns: this.config.network?.enableMdns ?? true,
+            });
+
+            // Initialize rooms
+            this.rooms = new RoomManager(this.identity, this.p2p, this.storage);
+
+            // Initialize CoC
+            this.coc = new CocEngine(this.identity, this.rooms, this.storage, this.reputation);
+
+            // Initialize federation + integration stack
+            this.federation = new FederationEngine(this.storage, this.identity);
+            this.knowledge = new KnowledgePool(this.storage, this.identity);
+            this.skills = new SkillsEngine(this.storage, this.identity);
+            this.security = new SecurityManager(this.identity);
+            this.integration = new IntegrationEngine(
+                this.storage,
+                this.identity,
+                this.federation,
+                this.rooms,
+                this.knowledge,
+                this.coc,
+                this.skills,
+                this.security
+            );
+            this.persona = new PersonaVaultEngine(this.storage, this.identity.did, {
+                defaultVaultName: `${this.identity.displayName} Persona Vault`,
+            });
+            this.integration.attachPersonaVault(this.persona);
+
+            // Initialize planner
+            this.planner = new Planner({
+                provider: this.config.planner?.provider,
+                apiKey: this.config.planner?.apiKey,
+                enableCache: this.config.planner?.enableCache ?? true,
+            });
+
+            // Initialize exporter
+            this.exporter = new CapsuleExporter(this.coc, this.storage);
+            this.proactive = new ProactiveMissionEngine(
+                this.identity,
+                this.storage,
+                this.rooms,
+                this.coc,
+                this.planner,
+                this.knowledge,
+                undefined,
+                undefined,
+                {
+                    enableLeadership: this.config.proactive?.enableLeadership ?? false,
+                    autoRestoreMissions: this.config.proactive?.autoRestoreMissions ?? false,
+                    leaseTtlMs: this.config.proactive?.leaseTtlMs,
+                    leaseRenewIntervalMs: this.config.proactive?.leaseRenewIntervalMs,
+                }
+            );
+
+            // Setup event forwarding
+            this.setupEventForwarding();
+
+            this.connected = true;
+            this.emit('connected');
+        } catch (err) {
+            // Clean up partially-initialized resources to prevent leaks
+            await this.p2p?.stop?.().catch(() => {});
+            this.rooms?.destroy?.();
+            this.storage?.close?.();
+            this.connected = false;
+            throw err;
         }
-
-        // Initialize reputation
-        this.reputation = new ReputationEngine(this.storage);
-
-        // Initialize P2P
-        this.p2p = new P2PNode();
-        await this.p2p.start({
-            port: this.config.network?.port,
-            bootstrapAddrs: this.config.network?.bootstrap,
-            enableGossipsub: this.config.network?.enableGossipsub ?? true,
-            enableDht: this.config.network?.enableDht ?? true,
-            enableMdns: this.config.network?.enableMdns ?? true,
-        });
-
-        // Initialize rooms
-        this.rooms = new RoomManager(this.identity, this.p2p, this.storage);
-
-        // Initialize CoC
-        this.coc = new CocEngine(this.identity, this.rooms, this.storage, this.reputation);
-
-        // Initialize federation + integration stack
-        this.federation = new FederationEngine(this.storage, this.identity);
-        this.knowledge = new KnowledgePool(this.storage, this.identity);
-        this.skills = new SkillsEngine(this.storage, this.identity);
-        this.security = new SecurityManager(this.identity);
-        this.integration = new IntegrationEngine(
-            this.storage,
-            this.identity,
-            this.federation,
-            this.rooms,
-            this.knowledge,
-            this.coc,
-            this.skills,
-            this.security
-        );
-        this.persona = new PersonaVaultEngine(this.storage, this.identity.did, {
-            defaultVaultName: `${this.identity.displayName} Persona Vault`,
-        });
-        this.integration.attachPersonaVault(this.persona);
-
-        // Initialize planner
-        this.planner = new Planner({
-            provider: this.config.planner?.provider,
-            apiKey: this.config.planner?.apiKey,
-            enableCache: this.config.planner?.enableCache ?? true,
-        });
-
-        // Initialize exporter
-        this.exporter = new CapsuleExporter(this.coc, this.storage);
-        this.proactive = new ProactiveMissionEngine(
-            this.identity,
-            this.storage,
-            this.rooms,
-            this.coc,
-            this.planner,
-            this.knowledge,
-            undefined,
-            undefined,
-            {
-                enableLeadership: this.config.proactive?.enableLeadership ?? false,
-                autoRestoreMissions: this.config.proactive?.autoRestoreMissions ?? false,
-                leaseTtlMs: this.config.proactive?.leaseTtlMs,
-                leaseRenewIntervalMs: this.config.proactive?.leaseRenewIntervalMs,
-            }
-        );
-
-        // Setup event forwarding
-        this.setupEventForwarding();
-
-        this.connected = true;
-        this.emit('connected');
     }
 
     async disconnect(): Promise<void> {
