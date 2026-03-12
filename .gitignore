@@ -45,6 +45,12 @@ docs/.astro/
 # Society capsule files (runtime data)
 *.society
 
+# Temporarily removed from git
+dashboard/
+LAUNCH.md
+ROADMAP.md
+SECURITY.md
+
 # Misc
 *.log
 coverage/
