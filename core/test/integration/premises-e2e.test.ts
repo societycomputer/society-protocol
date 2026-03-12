@@ -521,7 +521,7 @@ describe('Premise 8: SOTA technology stack', () => {
         expect(cid.length).toBe(64);
 
         // Reputation
-        const rep = new ReputationEngine(env.storage, env.identity);
+        const rep = new ReputationEngine(env.storage);
         expect(rep).toBeDefined();
 
         // Social

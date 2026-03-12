@@ -129,7 +129,7 @@ describe('ProtocolBench — Society Protocol', () => {
         for (let i = 0; i < 50; i++) {
             const tag = `topic-${i % 10}`;
             const qStart = performance.now();
-            const found = pool.queryCards(spaceId, { tags: [tag] });
+            const found = pool.queryCards({ spaceId, tags: [tag] });
             const qEnd = performance.now();
 
             const success = found.length > 0;
