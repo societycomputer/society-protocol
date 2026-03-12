@@ -1,17 +1,14 @@
 {
-  "version": "1.0",
   "providers": {
     "openrouter": {
-      "api_key": "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",
-      "api_base": "https://openrouter.ai/api/v1"
+      "apiKey": "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"
     }
   },
   "agents": {
-    "default": {
+    "defaults": {
       "model": "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
-      "max_tokens": 512,
-      "temperature": 0.3,
-      "system_prompt": "You are Agent-1, a research specialist in the Society Protocol network. Always respond concisely and factually. When asked to research a topic, provide a brief but informative summary."
+      "maxTokens": 512,
+      "temperature": 0.3
     }
   },
   "gateway": {

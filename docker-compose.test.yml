@@ -15,10 +15,10 @@ services:
     volumes:
       - ollama-data:/root/.ollama
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD", "ollama", "list"]
       interval: 5s
-      timeout: 5s
-      retries: 20
+      timeout: 10s
+      retries: 10
       start_period: 10s
     deploy:
       resources:
@@ -33,7 +33,7 @@ services:
     ports:
       - "18791:18790"
     volumes:
-      - ./docker/nanobot-agent1-config:/root/.nanobot:ro
+      - ./docker/nanobot-agent1-config/config.json:/root/.nanobot/config.json:ro
     depends_on:
       ollama:
         condition: service_healthy
@@ -52,7 +52,7 @@ services:
     ports:
       - "18792:18790"
     volumes:
-      - ./docker/nanobot-agent2-config:/root/.nanobot:ro
+      - ./docker/nanobot-agent2-config/config.json:/root/.nanobot/config.json:ro
     depends_on:
       ollama:
         condition: service_healthy

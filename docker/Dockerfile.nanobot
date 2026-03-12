@@ -3,11 +3,12 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
-RUN uv pip install --system nanobot-ai
+RUN uv pip install --system nanobot-ai aiohttp
 
 RUN mkdir -p /root/.nanobot
 
+COPY docker/nanobot-http-wrapper.py /opt/nanobot-http-wrapper.py
+
 EXPOSE 18790
 
-ENTRYPOINT ["nanobot"]
-CMD ["gateway"]
+ENTRYPOINT ["python", "/opt/nanobot-http-wrapper.py"]

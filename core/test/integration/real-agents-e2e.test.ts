@@ -170,9 +170,21 @@ async function isOpenRouterAvailable(): Promise<boolean> {
 
 async function isNanobotAvailable(port: number): Promise<boolean> {
     try {
-        const res = await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(3000) });
-        return true; // any response means it's running
+        const res = await fetch(`http://localhost:${port}/health`, { signal: AbortSignal.timeout(3000) });
+        return res.ok;
     } catch { return false; }
+}
+
+async function callNanobot(port: number, message: string): Promise<string> {
+    const res = await fetch(`http://localhost:${port}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+        signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) throw new Error(`Nanobot:${port}: ${res.status} ${res.statusText}`);
+    const data = await res.json() as any;
+    return data?.response || '';
 }
 
 async function callOllama(prompt: string, model = OLLAMA_MODEL): Promise<string> {
@@ -350,7 +362,7 @@ describe('Scenario 1: Multi-Runtime Agent Collaboration (Ollama + OpenRouter)', 
 // ─── Scenario 2: Nanobot External Agents ────────────────────────
 
 describe('Scenario 2: Nanobot External Agents via HTTP', () => {
-    it('connects nanobot containers as external agents in protocol pipeline', async () => {
+    it('calls real nanobot Docker containers and feeds results into protocol pipeline', async () => {
         const nb1 = await isNanobotAvailable(NANOBOT_PORT_1);
         const nb2 = await isNanobotAvailable(NANOBOT_PORT_2);
         if (!nb1 && !nb2) { console.log('  ⚠ No Nanobot containers available — skipping'); return; }
@@ -367,37 +379,38 @@ describe('Scenario 2: Nanobot External Agents via HTTP', () => {
 
         cleanupFns.push(() => { coc.destroy(); });
 
-        // Open a chain
-        const roomId = 'nanobot-room';
-        const chainId = await coc.openChain(roomId, 'Research distributed systems via nanobot agents');
+        // Create room in DB directly (FK constraint for coc_chains.room_id)
+        storage.db.prepare(
+            'INSERT OR IGNORE INTO rooms (room_id, name, created_by, created_at) VALUES (?, ?, ?, ?)'
+        ).run('nanobot-room', 'nanobot-room', identity.did, Date.now());
+        const chainId = await coc.openChain('nanobot-room', 'Research distributed systems via nanobot agents');
 
         // Query available nanobot instances
-        const nanobots: { port: number; name: string }[] = [];
-        if (nb1) nanobots.push({ port: NANOBOT_PORT_1, name: 'Nanobot-Research' });
-        if (nb2) nanobots.push({ port: NANOBOT_PORT_2, name: 'Nanobot-Review' });
+        const nanobots: { port: number; name: string; prompt: string }[] = [];
+        if (nb1) nanobots.push({
+            port: NANOBOT_PORT_1,
+            name: 'Nanobot-Research',
+            prompt: 'Explain the CAP theorem in distributed systems in 2 sentences.',
+        });
+        if (nb2) nanobots.push({
+            port: NANOBOT_PORT_2,
+            name: 'Nanobot-Review',
+            prompt: 'What is eventual consistency? Answer in 2 sentences.',
+        });
 
         console.log(`  ✓ ${nanobots.length} nanobot agent(s) available`);
 
-        // Use OpenRouter directly as a proxy for nanobot-style HTTP agents
-        const openrouter = await isOpenRouterAvailable();
-
+        const nanobotResponses: string[] = [];
         for (let i = 0; i < nanobots.length; i++) {
             const nb = nanobots[i];
             const stepStart = performance.now();
 
-            let agentResponse: string;
-            if (openrouter) {
-                // Use OpenRouter as the LLM backend (simulates nanobot calling OpenRouter)
-                const prompt = i === 0
-                    ? 'Explain the CAP theorem in distributed systems in 2 sentences.'
-                    : 'What is eventual consistency? Answer in 2 sentences.';
-                agentResponse = await callOpenRouter(prompt, `You are ${nb.name}.`);
-            } else {
-                agentResponse = `[${nb.name}] Simulated response for distributed systems topic.`;
-            }
-
+            // Call the actual nanobot container via HTTP
+            const agentResponse = await callNanobot(nb.port, nb.prompt);
             const stepDuration = performance.now() - stepStart;
+
             expect(agentResponse.length).toBeGreaterThan(5);
+            nanobotResponses.push(agentResponse);
             collector.recordMessage(`nanobot.${nb.name}`, agentResponse.length, stepDuration);
             collector.recordTaskCompletion(true, 1.0);
 
@@ -417,12 +430,51 @@ describe('Scenario 2: Nanobot External Agents via HTTP', () => {
                 timestamp: Date.now(),
             });
 
-            console.log(`  ✓ ${nb.name} responded: ${agentResponse.substring(0, 80)}...`);
+            console.log(`  ✓ ${nb.name} responded (${stepDuration.toFixed(0)}ms): ${agentResponse.substring(0, 80)}...`);
         }
 
-        // Store knowledge from nanobot outputs
+        // Store nanobot knowledge in CRDT pool
         const pool = new KnowledgePool(storage, identity);
         setupSpaceInMemory(pool, 'nanobot-space', 'Nanobot Knowledge');
+
+        for (let i = 0; i < nanobotResponses.length; i++) {
+            const card = makeCard(
+                identity,
+                `nanobot-card-${i}`,
+                'nanobot-space',
+                `Nanobot Output ${i}`,
+                nanobotResponses[i],
+                ['nanobot', 'distributed-systems'],
+            );
+            pool.mergeCard(card);
+        }
+
+        const cards = pool.queryCards({ spaceId: 'nanobot-space', tags: ['nanobot'] });
+        expect(cards.length).toBe(nanobotResponses.length);
+
+        // Verify reputation was recorded
+        for (let i = 0; i < nanobots.length; i++) {
+            const rep = await reputation.getReputation(`did:key:nanobot-${i}`);
+            expect(rep.metrics.tasks_completed).toBeGreaterThanOrEqual(1);
+        }
+
+        // Create a federation with nanobot agents
+        const fedEngine = new FederationEngine(storage, identity);
+        const fed = await fedEngine.createFederation(
+            'Nanobot Federation', 'Federation of nanobot agents'
+        );
+        expect(fed.name).toBe('Nanobot Federation');
+
+        // Join each nanobot agent to the federation (creator invites them)
+        for (let i = 0; i < nanobots.length; i++) {
+            const nbIdentity = generateIdentity(`NanobotAgent${i}`);
+            saveId(storage, nbIdentity);
+            await fedEngine.joinFederation(fed.id, nbIdentity.did, nbIdentity.displayName, identity.did);
+        }
+
+        const fedState = fedEngine.getFederation(fed.id)!;
+        expect(fedState.members.size).toBeGreaterThanOrEqual(nanobots.length);
+        console.log(`  ✓ Federation created with ${fedState.members.size} members`);
 
         const duration = performance.now() - start;
         const scenarioResult = evaluateScenario('Nanobot External Agents', collector.snapshot(), duration);

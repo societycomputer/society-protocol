@@ -32,6 +32,7 @@
         "test:integration": "vitest run test/integration",
         "test:benchmark": "vitest run test/benchmark --reporter=verbose",
         "test:real": "vitest run test/integration/real-agents-e2e.test.ts --reporter=verbose",
+        "test:rarasnet": "vitest run test/integration/rarasnet-simulation.test.ts --reporter=verbose",
         "test:coverage": "vitest run --coverage",
         "test:manual": "tsx scripts/test-manual.ts",
         "test:watch": "vitest",

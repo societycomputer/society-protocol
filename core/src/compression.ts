@@ -211,7 +211,7 @@ export class MessageCompressor {
     }
 
     private async dynamicImport(moduleName: string): Promise<any> {
-        return new Function('m', 'return import(m)')(moduleName);
+        return import(moduleName);
     }
 
     getCompressionStats(original: number, compressed: number): {

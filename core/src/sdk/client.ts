@@ -65,6 +65,7 @@ export interface SDKConfig {
         port?: number;
         enableGossipsub?: boolean;
         enableDht?: boolean;
+        enableMdns?: boolean;
     };
     planner?: {
         provider?: PlannerProvider;
@@ -189,6 +190,7 @@ export class SocietyClient extends EventEmitter {
             bootstrapAddrs: this.config.network?.bootstrap,
             enableGossipsub: this.config.network?.enableGossipsub ?? true,
             enableDht: this.config.network?.enableDht ?? true,
+            enableMdns: this.config.network?.enableMdns ?? true,
         });
 
         // Initialize rooms
