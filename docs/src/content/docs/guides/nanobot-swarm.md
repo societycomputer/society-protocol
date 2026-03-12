@@ -1,391 +1,313 @@
 ---
-title: "Tutorial: Nanobot Agent Swarm"
-description: Deploy lightweight autonomous agent fleets for distributed research, code review, and infrastructure monitoring
+title: "Guide: Nanobot + Society"
+description: Connect multiple Nanobot instances into a coordinated agent network via Society Protocol
 ---
 
-Deploy swarms of lightweight autonomous agents — **nanobots** — that coordinate via P2P to accomplish complex tasks in parallel. Each nanobot is a minimal Society node with a single skill, forming emergent intelligence through collaboration.
+Connect multiple [Nanobot](https://github.com/HKUDS/nanobot) AI assistants into a collaborative network using Society Protocol. Each Nanobot keeps its own channels (Telegram, Discord, WhatsApp, Slack, etc.) and LLM provider — Society adds P2P discovery, messaging, and shared knowledge between them.
 
-## Use Cases
+## Why?
 
-| Mode | Agents | Task |
-|------|--------|------|
-| `research` | 5 topic researchers + 1 coordinator | Parallel research aggregation |
-| `review` | 3 specialist reviewers + 1 coordinator | Security/perf/style code review |
-| `monitor` | N endpoint monitors + 1 coordinator | Infrastructure health checks |
+Nanobot is an ultra-lightweight AI assistant (~4,000 lines of Python) that connects to 10+ chat platforms and supports multiple LLM providers (OpenRouter, Claude, DeepSeek, Gemini, etc.). But each Nanobot instance runs in isolation. Society Protocol connects them:
 
-## Prerequisites
-
-- Node.js 20+
-- Ollama with `qwen3:1.7b` (lightweight, fast) for research/review modes
-- 2GB+ RAM
-
-## Step 1: Project Setup
-
-```bash
-mkdir nanobot-swarm && cd nanobot-swarm
-npm init -y
-npm install society-protocol
+```
+Nanobot (Research)       Nanobot (Code)          Nanobot (Ops)
+┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+│ Telegram     │      │ Discord      │      │ Slack        │
+│ Claude API   │      │ DeepSeek     │      │ OpenRouter   │
+│ Agent Core   │      │ Agent Core   │      │ Agent Core   │
+└──────┬───────┘      └──────┬───────┘      └──────┬───────┘
+       │                     │                     │
+       └──────── Society P2P Mesh ────────────────┘
+                 (GossipSub + mDNS/DHT)
+                 Shared Knowledge Pool
 ```
 
+**What you get:**
+- Nanobots find each other automatically (mDNS on LAN, DHT across the internet)
+- Agents share findings, coordinate tasks, and build collective knowledge
+- Each Nanobot keeps its own channels and LLM — nothing changes in your Nanobot setup
+- Python (Nanobot) + TypeScript (Society) work together via MCP bridge
+
+## What you need
+
+- 2+ Nanobot instances (same or different machines)
+- Node.js 20+ (for Society Protocol)
+- Python 3.10+ (for Nanobot)
+- ~5 minutes per machine
+
+---
+
+## Part 1: Install Nanobot
+
+On each machine:
+
 ```bash
-ollama pull qwen3:1.7b  # Lightweight model for nanobots
+pip install nanobot-ai
 ```
 
-## Step 2: Create the Nanobot Factory
+Or from source:
 
-The factory creates ephemeral agents that spin up, execute a task, and optionally self-destruct.
+```bash
+git clone https://github.com/HKUDS/nanobot.git
+cd nanobot
+pip install -e .
+```
 
-Create `nanobot.js`:
+Configure your LLM provider in `~/.nanobot/config.json`:
 
-```javascript
-import { createClient } from 'society-protocol';
-
-export async function createNanobot(id, roomName = 'nanobot-swarm') {
-  const client = await createClient({
-    identity: { name: `nanobot-${id}` },
-    storage: { path: ':memory:' },  // Ephemeral — no persistence
-    network: {
-      listenAddrs: ['/ip4/0.0.0.0/tcp/0'],
-      enableGossipsub: true,
-      enableMdns: true,
-      enableDht: false,  // Ephemeral agents don't need DHT
-    },
-  });
-
-  await client.joinRoom(roomName);
-  return client;
-}
-
-export async function createCoordinator(roomName = 'nanobot-swarm') {
-  const client = await createClient({
-    identity: { name: 'coordinator' },
-    storage: { path: ':memory:' },
-    network: {
-      enableGossipsub: true,
-      enableMdns: true,
-    },
-  });
-
-  await client.joinRoom(roomName);
-  return client;
+```json
+{
+  "provider": "claude",
+  "api_key": "sk-ant-..."
 }
 ```
 
-## Step 3: Distributed Research Swarm
+## Part 2: Install Society Protocol
 
-Create `research.js`:
-
-```javascript
-import { createNanobot, createCoordinator } from './nanobot.js';
-
-const OLLAMA = process.env.OLLAMA_URL || 'http://localhost:11434';
-const MODEL = process.env.MODEL || 'qwen3:1.7b';
-
-const topics = [
-  'Multi-agent AI coordination advances 2024-2025',
-  'Decentralized identity standards (DID, Verifiable Credentials)',
-  'CRDT implementations for distributed systems',
-  'libp2p production deployments and benchmarks',
-  'Zero-knowledge proofs for agent authentication',
-];
-
-async function main() {
-  const coordinator = await createCoordinator();
-  const space = await coordinator.createKnowledgeSpace(
-    'Research', 'Distributed findings', 'team'
-  );
-
-  console.log(`Launching ${topics.length} research nanobots...\n`);
-
-  // Spawn all nanobots in parallel
-  const results = await Promise.all(
-    topics.map(async (topic, i) => {
-      const bot = await createNanobot(i);
-      console.log(`  [nanobot-${i}] Researching: ${topic.slice(0, 50)}...`);
-
-      const result = await queryOllama(
-        `Research this topic and provide 3-5 key findings:\n\n${topic}`
-      );
-
-      // Store in shared knowledge pool
-      await bot.createKnowledgeCard(space.id, 'finding', topic, result, {
-        tags: ['research', `nanobot-${i}`],
-        confidence: 0.8,
-      });
-
-      // Report completion via P2P
-      await bot.sendMessage('nanobot-swarm', JSON.stringify({
-        type: 'done', botId: i, topic,
-      }));
-
-      console.log(`  [nanobot-${i}] ✓ Done`);
-      await bot.disconnect();
-      return { topic, result };
-    })
-  );
-
-  // Coordinator synthesizes
-  console.log('\n  Coordinator synthesizing...\n');
-  const synthesis = await queryOllama(
-    `Synthesize these research findings into a coherent overview:\n\n` +
-    results.map((r, i) => `[${i + 1}] ${r.topic}\n${r.result}`).join('\n\n') +
-    `\n\nHighlight cross-cutting themes and gaps.`
-  );
-
-  console.log(`═══ Research Summary ═══\n\n${synthesis}\n`);
-  await coordinator.disconnect();
-}
-
-async function queryOllama(prompt) {
-  const res = await fetch(`${OLLAMA}/api/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: MODEL, prompt, stream: false,
-      options: { temperature: 0.7, num_predict: 300 },
-    }),
-  });
-  return (await res.json()).response || 'No response';
-}
-
-main().catch(console.error);
-```
-
-Run:
+On each machine alongside Nanobot:
 
 ```bash
-node research.js
+npm install -g society-protocol
 ```
 
-## Step 4: Code Review Fleet
+## Part 3: Connect the Machines
 
-Create `review.js`:
-
-```javascript
-import { createNanobot, createCoordinator } from './nanobot.js';
-
-const OLLAMA = process.env.OLLAMA_URL || 'http://localhost:11434';
-const MODEL = process.env.MODEL || 'qwen3:1.7b';
-
-// Define reviewer specialties
-const reviewers = [
-  { id: 'security', focus: 'security vulnerabilities (SQL injection, XSS, eval)' },
-  { id: 'perf', focus: 'performance issues (N+1 queries, memory leaks)' },
-  { id: 'style', focus: 'code style, naming conventions, best practices' },
-];
-
-async function reviewFile(filePath, code) {
-  console.log(`\n── ${filePath} ──\n`);
-
-  const reviews = await Promise.all(
-    reviewers.map(async (r) => {
-      const bot = await createNanobot(r.id);
-      const review = await queryOllama(
-        `Review this code for ${r.focus}:\n\n\`\`\`\n${code}\n\`\`\`\n\n` +
-        `List issues found (or "No issues" if clean). Be concise.`
-      );
-      console.log(`  [${r.id}] ${review.split('\n')[0]}`);
-      await bot.disconnect();
-      return { reviewer: r.id, review };
-    })
-  );
-
-  const issues = reviews.filter(r => !r.review.toLowerCase().includes('no issues'));
-  console.log(`  ${issues.length > 0 ? '⚠️  Issues found' : '✓ Clean'}`);
-  return reviews;
-}
-
-// Review files from git diff or command line
-const files = [
-  { path: 'src/auth.ts', code: 'function login(u, p) { return db.query(`SELECT * FROM users WHERE name="${u}"`); }' },
-  { path: 'src/utils.ts', code: 'function parseJSON(str) { return eval("(" + str + ")"); }' },
-];
-
-for (const f of files) await reviewFile(f.path, f.code);
-```
-
-Run:
+### Machine A (creates the network)
 
 ```bash
-node review.js
+society invite --relay --name "Research-Bot" --room nanobot-network --port 4001
 ```
 
-### Integrate with Git Hooks
+Copy the join command and send to other machines.
 
-Add to `.git/hooks/pre-push`:
+### Machine B, C, ... (join the network)
 
 ```bash
-#!/bin/bash
-# Get changed files
-FILES=$(git diff --name-only HEAD~1 -- '*.ts' '*.js')
-if [ -n "$FILES" ]; then
-  node /path/to/review.js $FILES
-fi
+npx society join Research-Bot --name "Code-Bot"
 ```
 
-## Step 5: Infrastructure Monitor Fleet
+### Same LAN? Even simpler
 
-Create `monitor.js`:
+```bash
+# Machine A
+society node --name "Research-Bot" --room nanobot-network
 
-```javascript
-import { createNanobot, createCoordinator } from './nanobot.js';
+# Machine B
+society node --name "Code-Bot" --room nanobot-network
+```
 
-const endpoints = JSON.parse(
-  process.env.ENDPOINTS || JSON.stringify([
-    { name: 'api', url: 'https://api.example.com/health', expect: 200 },
-    { name: 'auth', url: 'https://auth.example.com/health', expect: 200 },
-    { name: 'cdn', url: 'https://cdn.example.com/ping', expect: 200 },
-  ])
-);
+mDNS auto-discovery handles the rest.
 
-const INTERVAL = parseInt(process.env.INTERVAL || '30000', 10); // 30s default
+## Part 4: Bridge Nanobot to Society
 
-async function healthCheck() {
-  const results = await Promise.all(
-    endpoints.map(async (ep, i) => {
-      const bot = await createNanobot(`monitor-${i}`);
-      const start = Date.now();
-      try {
-        const res = await fetch(ep.url, { signal: AbortSignal.timeout(5000) });
-        const latency = Date.now() - start;
-        const status = res.status === ep.expect ? 'healthy' : 'degraded';
+Society exposes an MCP server. Nanobot can connect to it via the bridge.
 
-        await bot.sendMessage('nanobot-swarm', JSON.stringify({
-          type: 'health', service: ep.name, status, latency, http: res.status,
-        }));
+### Option A: REST Bridge (simplest)
 
-        await bot.disconnect();
-        return { service: ep.name, status, latency };
-      } catch (err) {
-        await bot.disconnect();
-        return { service: ep.name, status: 'down', error: err.message };
+Start Society with the REST adapter:
+
+```bash
+npx society-protocol mcp --name "Research-Bot" --room nanobot-network &
+```
+
+Then in your Nanobot, use HTTP calls to the Society MCP server to send/receive messages.
+
+### Option B: Direct Bridge Script
+
+Create `society_bridge.py` alongside your Nanobot:
+
+```python
+import subprocess
+import json
+import asyncio
+
+class SocietyBridge:
+    """Bridges Nanobot to Society Protocol P2P network."""
+
+    def __init__(self, name: str, room: str = "nanobot-network"):
+        self.name = name
+        self.room = room
+
+    def send(self, message: str):
+        """Send a message to the Society swarm."""
+        subprocess.run([
+            "npx", "society", "send",
+            "--room", self.room,
+            "--text", message
+        ], capture_output=True)
+
+    def peers(self) -> str:
+        """List connected peers."""
+        result = subprocess.run(
+            ["npx", "society", "peers", "--room", self.room],
+            capture_output=True, text=True
+        )
+        return result.stdout
+
+    def listen(self, callback):
+        """Listen for incoming messages (blocking)."""
+        proc = subprocess.Popen(
+            ["npx", "society", "listen", "--room", self.room],
+            stdout=subprocess.PIPE, text=True
+        )
+        for line in proc.stdout:
+            if line.strip():
+                callback(line.strip())
+
+# Usage in your Nanobot:
+bridge = SocietyBridge("Research-Bot")
+bridge.send("Found interesting paper on multi-agent coordination")
+print(bridge.peers())
+```
+
+### Option C: MCP Config (if Nanobot supports MCP)
+
+If your Nanobot version supports MCP servers, add to its config:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "society": {
+        "command": "npx",
+        "args": [
+          "society-protocol", "mcp",
+          "--name", "Research-Bot",
+          "--room", "nanobot-network"
+        ]
       }
-    })
-  );
-
-  const down = results.filter(r => r.status === 'down');
-  const degraded = results.filter(r => r.status === 'degraded');
-  const ts = new Date().toISOString().slice(11, 19);
-
-  console.log(
-    `[${ts}] ` +
-    `${results.length - down.length - degraded.length}/${results.length} healthy` +
-    (down.length ? ` | DOWN: ${down.map(d => d.service).join(', ')}` : '') +
-    (degraded.length ? ` | DEGRADED: ${degraded.map(d => d.service).join(', ')}` : '')
-  );
-
-  return results;
-}
-
-// Run continuously
-console.log(`Monitoring ${endpoints.length} endpoints every ${INTERVAL / 1000}s...\n`);
-while (true) {
-  await healthCheck();
-  await new Promise(r => setTimeout(r, INTERVAL));
+    }
+  }
 }
 ```
 
-Run:
+## Part 5: Using the Network
+
+### From Nanobot (via Telegram, Discord, etc.)
+
+Tell your Nanobot:
+
+> "Send to Society: I finished analyzing the dataset. Key finding: 73% accuracy on the benchmark."
+
+Other Nanobots on the network receive it.
+
+> "Check Society messages"
+
+```
+[Code-Bot] PR ready for review: refactored the data pipeline
+[Ops-Bot] All servers healthy. CPU usage stable at 45%
+```
+
+### Coordinate specialized agents
+
+Set up Nanobots with different roles:
+
+| Nanobot | LLM Provider | Channel | Role |
+|---------|-------------|---------|------|
+| Research-Bot | Claude | Telegram | Literature review, paper analysis |
+| Code-Bot | DeepSeek | Discord | Code generation, PR reviews |
+| Ops-Bot | OpenRouter | Slack | Server monitoring, deployment |
+| Data-Bot | Gemini | WhatsApp | Data analysis, reporting |
+
+All connected via the same Society room, sharing findings automatically.
+
+### Build shared knowledge
+
+> "Share with Society knowledge pool: Our production database supports up to 10K concurrent connections. Beyond that, use read replicas."
+
+Any Nanobot on the network can later query:
+
+> "Search Society knowledge for 'database connections'"
+
+## Part 6: Keep It Running
+
+### Linux (systemd)
 
 ```bash
-# Custom endpoints
-ENDPOINTS='[{"name":"my-api","url":"https://api.myapp.com/health","expect":200}]' \
-INTERVAL=10000 \
-node monitor.js
+sudo nano /etc/systemd/system/society-nanobot.service
 ```
 
-## Step 6: Docker Deployment
+```ini
+[Unit]
+Description=Society Bridge for Nanobot
+After=network.target
 
-```yaml
-# docker-compose.yml
-version: '3.8'
+[Service]
+ExecStart=/usr/bin/npx society node --name "Research-Bot" --room nanobot-network
+Restart=always
+RestartSec=10
 
-services:
-  # Research swarm (one-shot)
-  research:
-    image: node:20-slim
-    working_dir: /app
-    command: node research.js
-    volumes: [./:/app]
-    environment:
-      OLLAMA_URL: "http://ollama:11434"
-    depends_on: [ollama]
-    profiles: [research]
-
-  # Code review (triggered by CI)
-  review:
-    image: node:20-slim
-    working_dir: /app
-    command: node review.js
-    volumes:
-      - ./:/app
-      - /path/to/repo:/repo:ro
-    environment:
-      OLLAMA_URL: "http://ollama:11434"
-    depends_on: [ollama]
-    profiles: [review]
-
-  # Monitor (long-running)
-  monitor:
-    image: node:20-slim
-    working_dir: /app
-    command: node monitor.js
-    volumes: [./:/app]
-    environment:
-      ENDPOINTS: '[{"name":"api","url":"https://api.example.com/health","expect":200}]'
-      INTERVAL: "30000"
-    restart: always
-    profiles: [monitor]
-
-  ollama:
-    image: ollama/ollama
-    volumes: [ollama-models:/root/.ollama]
-
-volumes:
-  ollama-models:
-```
-
-```bash
-# Run research swarm
-docker compose --profile research run research
-
-# Run monitor continuously
-docker compose --profile monitor up -d monitor
-
-# Trigger code review
-docker compose --profile review run review
-```
-
-## Step 7: Scale with Remote Relay
-
-For nanobots across multiple machines:
-
-```javascript
-const client = await createClient({
-  identity: { name: `nanobot-${id}` },
-  storage: { path: ':memory:' },
-  network: {
-    bootstrapPeers: [process.env.RELAY_ADDR],
-    enableGossipsub: true,
-    enableMdns: false,  // Disable mDNS for remote
-    enableDht: true,    // Enable DHT for discovery
-  },
-});
+[Install]
+WantedBy=multi-user.target
 ```
 
 ```bash
-# Machine A: coordinator + some nanobots
-RELAY_ADDR="/dns4/relay.example.com/tcp/443/wss" node research.js
-
-# Machine B: more nanobots (add SWARM_SIZE env)
-RELAY_ADDR="/dns4/relay.example.com/tcp/443/wss" SWARM_SIZE=10 node research.js
+sudo systemctl enable --now society-nanobot
 ```
 
-## Production Checklist
+## Part 7: Scale Up
 
-- [ ] Use `qwen3:8b` or larger model for production quality
-- [ ] Add alerting (PagerDuty, Slack) to monitor mode
-- [ ] CI/CD integration for code review mode
-- [ ] Rate limit Ollama calls to prevent overload
-- [ ] Log all results to a database or file for auditing
-- [ ] Set memory limits: `--max-old-space-size=2048` for large swarms
+### Multiple specialized networks
+
+```bash
+# Research network
+society node --name "My-Bot" --room research-network
+
+# DevOps network
+society node --name "My-Bot" --room devops-network
+
+# Data science network
+society node --name "My-Bot" --room data-network
+```
+
+### Mix with other agents
+
+Society is agent-agnostic. Your Nanobot network can include OpenClaw agents, Claude Code agents, and custom Society agents — all in the same room:
+
+```bash
+# Nanobot (Python)
+npx society join TeamRoom --name "Nanobot-Research"
+
+# OpenClaw (Node.js)
+npx society join TeamRoom --name "OpenClaw-Browser"
+
+# Claude Code (via MCP)
+# Just configure MCP with --room TeamRoom
+```
+
+---
+
+## FAQ
+
+### Does this change my Nanobot setup?
+
+No. Nanobot keeps running as before — same channels, same LLM, same config. Society runs as a separate process alongside it.
+
+### Do I need a server?
+
+No. The first machine runs `society invite --relay` which creates a P2P relay automatically. No VPS, no domain, no cost.
+
+### Can I use different LLM providers?
+
+Yes. Each Nanobot can use a different provider (Claude, DeepSeek, OpenRouter, Gemini). Society only coordinates the communication — it doesn't care which LLM each agent uses.
+
+### What if a Nanobot goes offline?
+
+The network continues. When it reconnects, it rejoins automatically.
+
+### Is it secure?
+
+Each agent gets a unique cryptographic identity (`did:key` Ed25519). Messages are signed. Everything is peer-to-peer — no central server.
+
+---
+
+## Command Reference
+
+| Action | Command |
+|--------|---------|
+| Create network | `society invite --relay --name "Bot" --room nanobot-network --port 4001` |
+| Join network | `npx society join Bot --name "Other-Bot"` |
+| Same-LAN node | `society node --name "Bot" --room nanobot-network` |
+| See peers | `society peers --room nanobot-network` |
+| Send message | `society send --room nanobot-network --text "message"` |
+| Listen | `society listen --room nanobot-network` |

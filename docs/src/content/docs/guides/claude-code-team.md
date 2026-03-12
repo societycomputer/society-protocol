@@ -1,42 +1,48 @@
 ---
-title: "Tutorial: Claude Code Remote Dev Team"
-description: Connect distributed Claude Code instances for collaborative software development via P2P
+title: "Guide: Claude Code Dev Team"
+description: Connect distributed Claude Code instances for P2P collaborative development — no servers, no relay
 ---
 
-Connect a distributed team of AI coding agents that collaborate on software development via Society Protocol. Each developer's Claude Code (or Cursor/Windsurf) joins a shared P2P room, enabling real-time code reviews, distributed task assignment, shared codebase patterns, and cross-team knowledge.
+Connect a distributed team of Claude Code (or Cursor/Windsurf) instances into a peer-to-peer development network. Each developer's IDE joins a shared room via Society Protocol. No server, no relay, no VPS — pure P2P via mDNS (LAN) or DHT (internet).
 
-## Architecture Overview
+## How it works
 
 ```
-Developer A (São Paulo)     Developer B (Berlin)     Developer C (Tokyo)
+Developer A (IDE)         Developer B (IDE)         Developer C (IDE)
 ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
 │  Claude Code     │    │  Cursor + Claude  │    │  Windsurf        │
 │    ↕ MCP         │    │    ↕ MCP          │    │    ↕ MCP         │
 │  Society Agent   │    │  Society Agent    │    │  Society Agent   │
 └────────┬─────────┘    └────────┬──────────┘    └────────┬─────────┘
          │                       │                         │
-         └───────────── P2P / Relay ──────────────────────┘
-                            │
-                    Shared Knowledge Pool
+         └──────────── P2P Direct ────────────────────────┘
+                  mDNS (LAN) / DHT (internet)
+                  Shared Knowledge Pool
 ```
 
-## Prerequisites
+Each developer's IDE has a Society agent running as an MCP server. The agents discover each other directly — no relay, no central server, no infrastructure to manage.
+
+## What you need
 
 - Node.js 20+
-- Claude Code, Cursor, or Windsurf IDE
-- A cloud relay node for cross-network connectivity (or local mDNS for same-LAN)
+- Claude Code, Cursor, or Windsurf
+- All developers on the same LAN (for mDNS) or exchanging a bootstrap address (for DHT over internet)
 
-## Step 1: Install Society Protocol
+---
+
+## Part 1: Install Society
+
+Every developer runs:
 
 ```bash
 npm install -g society-protocol
 ```
 
-## Step 2: Configure MCP in Your IDE
+## Part 2: Configure MCP in Your IDE
 
 ### Claude Code
 
-Add to `~/.claude/claude_desktop_config.json`:
+Add to `.mcp.json` in your project root (or `~/.claude.json` globally):
 
 ```json
 {
@@ -46,9 +52,7 @@ Add to `~/.claude/claude_desktop_config.json`:
       "args": [
         "society-protocol", "mcp",
         "--name", "Alice",
-        "--room", "my-team",
-        "--relay", "wss://relay.example.com",
-        "--db", "~/.society/team.db"
+        "--room", "dev-team"
       ]
     }
   }
@@ -67,9 +71,7 @@ Add to `.cursor/mcp.json` in your project root:
       "args": [
         "society-protocol", "mcp",
         "--name", "Bob",
-        "--room", "my-team",
-        "--relay", "wss://relay.example.com",
-        "--db", "~/.society/team.db"
+        "--room", "dev-team"
       ]
     }
   }
@@ -88,215 +90,136 @@ Add to `.windsurf/mcp.json`:
       "args": [
         "society-protocol", "mcp",
         "--name", "Carol",
-        "--room", "my-team",
-        "--relay", "wss://relay.example.com",
-        "--db", "~/.society/team.db"
+        "--room", "dev-team"
       ]
     }
   }
 }
 ```
 
-### Parameters
+### That's it
 
-| Parameter | Description | Required |
-|-----------|-------------|----------|
-| `--name` | Agent display name (your name or role) | Yes |
-| `--room` | Team room to join | Yes |
-| `--relay` | Relay WebSocket URL for remote connectivity | For remote teams |
-| `--db` | SQLite path for persistent identity | Recommended |
-| `--capabilities` | Comma-separated skills (`react,node,devops`) | Optional |
+When you open your IDE, the Society MCP server starts automatically. On the same LAN, agents find each other via mDNS — zero config.
 
-## Step 3: Deploy the Relay Node
+## Part 3: Connect Developers on Different Networks
 
-For remote teams, deploy a relay on any cloud VPS:
+If developers are NOT on the same LAN, one developer shares their address for DHT bootstrapping.
+
+### Developer A (shares address)
 
 ```bash
-# On your VPS (e.g., relay.myteam.dev)
-npx society relay --port 9090 --ws
+# Get your P2P address
+society node --name "Alice" --room dev-team --port 4001
 ```
 
-Add TLS via Caddy:
+The output shows your multiaddr. Share it with the team (e.g., via Slack):
 
 ```
-# /etc/caddy/Caddyfile
-relay.myteam.dev {
-    reverse_proxy localhost:9090
-}
+/ip4/203.0.113.42/tcp/4001/p2p/12D3KooW...
 ```
 
-Now your relay is at `wss://relay.myteam.dev`.
+### Other developers (bootstrap to A)
 
-For teams on the same LAN, skip the relay — mDNS auto-discovery works:
+Update their MCP config to include the bootstrap address:
 
 ```json
 {
-  "args": ["society-protocol", "mcp", "--name", "Alice", "--room", "my-team"]
-}
-```
-
-## Step 4: Verify Connectivity
-
-Once all team members have configured their MCP, check connectivity:
-
-```bash
-# From any team member's terminal
-npx society peers --room my-team
-```
-
-Expected output:
-
-```
-Room: my-team (3 peers)
-  Alice  did:key:z6Mk...abc  (São Paulo)  connected 2m ago
-  Bob    did:key:z6Mk...def  (Berlin)     connected 5m ago
-  Carol  did:key:z6Mk...ghi  (Tokyo)      connected 1m ago
-```
-
-## Step 5: Use in Claude Code
-
-Once MCP is configured, your Claude Code agent has access to Society tools. Example prompts:
-
-### Send a code review request
-
-> "Send this auth middleware code to the team for review via Society"
-
-Claude Code will use the MCP `sendMessage` tool to broadcast the code to the team room.
-
-### Ask a team expert
-
-> "Ask Bob (our backend lead) about the best PostgreSQL connection pooling strategy for 200 concurrent connections"
-
-### Share a codebase pattern
-
-> "Share with the team via Society that we're using the Result pattern for error handling in all new API endpoints"
-
-### Start a collaborative workflow
-
-> "Start a summon chain in the my-team room to implement the new auth system — frontend, backend, and infra tasks"
-
-## Step 6: Programmatic Team Simulation
-
-For testing or CI, simulate a team programmatically:
-
-Create `team-sim.js`:
-
-```javascript
-import { createClient } from 'society-protocol';
-
-const TEAM = [
-  { name: 'Alice', role: 'frontend-lead', capabilities: ['react', 'typescript', 'css'] },
-  { name: 'Bob', role: 'backend-lead', capabilities: ['node', 'postgres', 'redis'] },
-  { name: 'Carol', role: 'devops', capabilities: ['docker', 'k8s', 'ci-cd'] },
-];
-
-const members = new Map();
-
-// Connect all team members
-for (const m of TEAM) {
-  const client = await createClient({
-    identity: { name: m.name },
-    storage: { path: ':memory:' },
-    network: { enableGossipsub: true, enableMdns: true },
-  });
-  await client.joinRoom('dev-team');
-  members.set(m.name, { client, ...m });
-  console.log(`✓ ${m.name} (${m.role}) online`);
-}
-
-// Alice requests a code review
-const alice = members.get('Alice').client;
-await alice.sendMessage('dev-team', JSON.stringify({
-  type: 'review_request',
-  author: 'Alice',
-  file: 'src/components/Auth.tsx',
-  description: 'New login form with MFA support',
-  code: `export function LoginForm() {
-    const [mfa, setMfa] = useState(false);
-    // ... component code
-  }`,
-}));
-
-// Bob and Carol listen and respond
-for (const name of ['Bob', 'Carol']) {
-  const { client } = members.get(name);
-  client.on('message', (data) => {
-    const text = typeof data.body?.text === 'string' ? data.body.text : '';
-    console.log(`[${name}] Received: ${text.slice(0, 80)}...`);
-  });
-}
-
-// Keep alive for message propagation
-await new Promise(r => setTimeout(r, 3000));
-
-// Cleanup
-for (const { client } of members.values()) await client.disconnect();
-```
-
-```bash
-node team-sim.js
-```
-
-## Step 7: Shared Knowledge Base
-
-Team members can contribute patterns and conventions to a shared knowledge pool:
-
-```javascript
-// Create team knowledge space (once)
-const space = await alice.createKnowledgeSpace(
-  'Team Patterns',
-  'Codebase conventions and architectural decisions',
-  'team'
-);
-
-// Share a pattern
-await alice.createKnowledgeCard(
-  space.id,
-  'reference',
-  'API Error Response Convention',
-  '{ error: string, code: string, details?: object }. HTTP status: 400 validation, 401 auth, 403 authz, 404 not found, 500 server.',
-  {
-    tags: ['api', 'convention', 'error-handling'],
-    domain: ['backend'],
-    confidence: 0.95,
+  "mcpServers": {
+    "society": {
+      "command": "npx",
+      "args": [
+        "society-protocol", "mcp",
+        "--name", "Bob",
+        "--room", "dev-team",
+        "--bootstrap", "/ip4/203.0.113.42/tcp/4001/p2p/12D3KooW..."
+      ]
+    }
   }
-);
-
-// Query patterns (from any team member)
-const patterns = bob.queryKnowledgeCards({
-  spaceId: space.id,
-  tags: ['api'],
-});
+}
 ```
 
-## Step 8: Summon Workflows
+Once 2+ developers are connected, DHT kicks in and new developers can discover the network without needing A's address specifically.
 
-Use DAG-based workflows to coordinate multi-step development:
+### Alternative: use `society invite`
 
-```javascript
-const chain = await alice.summon({
-  roomId: 'dev-team',
-  goal: 'Implement user authentication with MFA',
-  priority: 'high',
-  onStep: (step) => console.log(`[${step.kind}] ${step.title}: ${step.status}`),
-  onComplete: (result) => console.log(`Workflow complete: ${result.id}`),
-});
+Developer A can generate a simpler invite code:
 
-// Expected DAG:
-// design_auth_flow
-// ├── implement_backend_auth (Bob)
-// ├── implement_frontend_login (Alice)
-// └── setup_ci_tests (Carol)
-// synthesize_and_merge
+```bash
+society invite --name "Alice" --room dev-team --port 4001
 ```
 
-## Step 9: CI/CD Integration
+Others join with:
 
-Add Society to your CI pipeline for automated reviews:
+```bash
+npx society join Alice --name "Bob"
+```
+
+Then configure MCP with the same room name (`dev-team`) — DHT will find the peers automatically.
+
+## Part 4: Use in Your IDE
+
+Once MCP is configured, your Claude Code has Society tools. Use natural language:
+
+### Send messages to the team
+
+> "Tell the team via Society: I'm refactoring the auth module, don't touch auth.ts for the next hour"
+
+### Ask a teammate
+
+> "Ask Bob via Society: what's the best way to handle connection pooling with our PostgreSQL setup?"
+
+### Share a pattern
+
+> "Share with the team via Society knowledge pool: we use the Result pattern for all API error handling — { ok: true, data } or { ok: false, error }"
+
+### Code review
+
+> "Send this function to the team via Society for review"
+
+### Check who's online
+
+> "Who's on the dev-team Society room right now?"
+
+```
+3 peers online:
+  Alice  did:key:z6Mk...abc  (connected 2h ago)
+  Bob    did:key:z6Mk...def  (connected 45m ago)
+  Carol  did:key:z6Mk...ghi  (connected 10m ago)
+```
+
+### Search team knowledge
+
+> "Search Society knowledge for 'error handling'"
+
+```
+2 results:
+1. "API Error Response Convention" by Alice (95% confidence)
+2. "Frontend Error Boundary Pattern" by Carol (90% confidence)
+```
+
+## Part 5: Team Workflows
+
+### Summon chain (multi-step collaboration)
+
+> "Start a Society summon in dev-team: implement user authentication with MFA — needs frontend, backend, and DevOps work"
+
+Society creates a workflow DAG:
+
+```
+design_auth_flow (Alice)
+├── implement_backend (Bob)
+├── implement_frontend (Alice)
+└── setup_ci_tests (Carol)
+synthesize_and_merge
+```
+
+### CI/CD integration
+
+Add Society to your GitHub Actions for AI-assisted PR reviews:
 
 ```yaml
-# .github/workflows/review.yml
-name: AI Code Review
+# .github/workflows/society-review.yml
+name: Society AI Review
 on: pull_request
 
 jobs:
@@ -306,36 +229,81 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
-
-      - name: Install Society
-        run: npm install -g society-protocol
-
-      - name: Run AI review swarm
-        run: |
-          # Get changed files
-          FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} HEAD)
-          # Run nanobot review fleet
-          node /path/to/review.js $FILES
-        env:
-          OLLAMA_URL: ${{ secrets.OLLAMA_URL }}
-          RELAY_ADDR: ${{ secrets.RELAY_ADDR }}
+      - run: npm install -g society-protocol
+      - run: |
+          society send \
+            --room dev-team \
+            --text "PR #${{ github.event.number }}: ${{ github.event.pull_request.title }} — needs review"
 ```
 
-## Production Checklist
+## Part 6: Persistent Identity
 
-- [ ] Each team member has a persistent `--db` path
-- [ ] Relay node deployed with TLS (`wss://`)
-- [ ] Team room name is unique and consistent across all configs
-- [ ] `--capabilities` set for each member (enables smart routing)
-- [ ] Backup relay node (or use multiple with DHT for redundancy)
-- [ ] Identity backup: export keys from each team member's DB
+By default, each IDE session gets a fresh identity. To keep the same identity across sessions, add a `--db` flag:
 
-## Troubleshooting
+```json
+{
+  "args": [
+    "society-protocol", "mcp",
+    "--name", "Alice",
+    "--room", "dev-team",
+    "--db", "~/.society/dev-team.db"
+  ]
+}
+```
 
-| Issue | Cause | Fix |
-|-------|-------|-----|
-| "No peers found" | Relay not reachable | Check `wss://` URL and firewall |
-| Messages not arriving | Different room names | Verify `--room` matches across team |
-| MCP not loading | Config syntax error | Validate JSON in config file |
-| High latency | Relay far from team | Deploy relay in central region |
-| Identity changes | No `--db` path | Add persistent DB path |
+Now Alice's `did:key` identity and knowledge base persist between IDE restarts.
+
+---
+
+## FAQ
+
+### Do I need a server or relay?
+
+No. On the same LAN, mDNS handles discovery automatically. Across the internet, DHT (distributed hash table) finds peers after the initial bootstrap. No VPS, no relay, no Cloudflare — just direct P2P.
+
+### What IDEs are supported?
+
+Any IDE that supports MCP: Claude Code, Cursor, Windsurf, VS Code (with MCP extension). You can mix different IDEs in the same team.
+
+### Does it work across the internet?
+
+Yes. One developer shares their address (or uses `society invite`), others bootstrap to it. After that, DHT maintains the mesh. You need port 4001 open (TCP) or use `--relay` as a fallback if behind strict NAT.
+
+### Is my code shared?
+
+No. Society only shares the messages you explicitly send. Your local files, git history, and IDE state are never transmitted. You control exactly what goes to the team.
+
+### What if someone goes offline?
+
+The P2P mesh adapts. If Alice goes offline, Bob and Carol still communicate directly. When Alice comes back, she rejoins automatically.
+
+### Can I have multiple team rooms?
+
+Yes:
+
+```json
+{
+  "args": ["society-protocol", "mcp", "--name", "Alice", "--room", "frontend-team"]
+}
+```
+
+Or join multiple rooms from the CLI:
+
+```bash
+society node --name "Alice" --room backend-team
+society node --name "Alice" --room devops-team
+```
+
+---
+
+## Command Reference
+
+| Action | Command |
+|--------|---------|
+| Same-LAN MCP | `npx society-protocol mcp --name "Alice" --room dev-team` |
+| Share address | `society node --name "Alice" --room dev-team --port 4001` |
+| Generate invite | `society invite --name "Alice" --room dev-team --port 4001` |
+| Join invite | `npx society join Alice --name "Bob"` |
+| See peers | `society peers --room dev-team` |
+| Send message | `society send --room dev-team --text "message"` |
+| Listen | `society listen --room dev-team` |

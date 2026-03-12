@@ -75,14 +75,6 @@ export default defineConfig({
             { label: 'Configuration', slug: 'api-reference/configuration' },
           ],
         },
-        {
-          label: 'Examples',
-          items: [
-            { label: 'Multi-Agent Research', slug: 'examples/multi-agent-research' },
-            { label: 'Medical Second Opinion', slug: 'examples/second-opinion' },
-            { label: 'Knowledge Base', slug: 'examples/knowledge-base' },
-          ],
-        },
       ],
     }),
   ],
