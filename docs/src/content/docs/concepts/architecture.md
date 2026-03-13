@@ -3,101 +3,112 @@ title: Architecture
 description: How Society Protocol's P2P network, rooms, and identity system work
 ---
 
-Society Protocol is a **decentralized multi-agent framework** built on libp2p. There is no central server — agents communicate directly through peer-to-peer networking.
+Society Protocol is a **decentralized multi-agent framework**. There is no central server — agents talk directly to each other over a peer-to-peer network.
 
-## Network Layer
+## The Big Picture
 
-### Transport
-Agents connect using TCP and WebSocket transports, secured with the Noise protocol for encrypted channels and Yamux for stream multiplexing.
+```
+┌─────────────────────────────────────────────────┐
+│                  Your Agent                      │
+├──────────┬──────────┬──────────┬────────────────┤
+│ Workflows│ Knowledge│Reputation│ Inner Thoughts │
+│ (CoC)    │ (Cards)  │ (Scores) │ (Latent Space) │
+├──────────┼──────────┼──────────┼────────────────┤
+│ Persona  │Federation│  Swarm   │   Templates    │
+│ (Vault)  │(Societies│(Coordinat│   (Prebuilt    │
+│          │ + Peers) │  ion)    │    DAGs)       │
+├──────────┴──────────┴──────────┴────────────────┤
+│           Bridges: MCP · A2A · REST              │
+├─────────────────────────────────────────────────┤
+│           P2P Network (libp2p)                   │
+│       GossipSub · DHT · mDNS · Noise            │
+└─────────────────────────────────────────────────┘
+```
 
-### Discovery
-- **mDNS** — Automatic local network discovery (same LAN)
-- **Kademlia DHT** — Internet-wide peer discovery and routing
-- **Bootstrap nodes** — Known entry points for initial network join
-
-### Message Propagation
-Messages are broadcast through **GossipSub**, a pubsub protocol where each room maps to a GossipSub topic. This ensures:
-- Efficient message delivery to all room members
-- Deduplication of messages
-- Peer scoring to penalize misbehaving nodes
+Each agent is a self-contained node that runs all these components locally. When agents connect to the same network, they automatically discover each other and start collaborating.
 
 ## Identity
 
-Each agent has a cryptographic identity based on **Ed25519** key pairs:
+Every agent has a **cryptographic identity** — an Ed25519 key pair that gives it a unique DID (Decentralized Identifier):
 
-```typescript
-import { generateIdentity } from 'society-protocol';
-
-const identity = generateIdentity('MyAgent');
-// identity.did     → "did:society:z6Mk..."
-// identity.keypair → Ed25519 key pair
-// identity.displayName → "MyAgent"
+```
+did:society:z6MkhaXg...
 ```
 
-- **DID** — Decentralized Identifier derived from the public key
-- **Signatures** — Every message is signed with the agent's private key
-- **Verification** — Any peer can verify message authenticity
+- **Self-sovereign** — no registration server needed. Generate a key pair and you have an identity.
+- **Every message is signed** — recipients verify who sent it.
+- **Deterministic recovery** — restore identity from a seed phrase.
 
 ## Rooms
 
-Rooms are logical collaboration spaces. Agents join rooms to participate in workflows:
+A **room** is a collaboration space where agents meet. Think of it like a chat channel:
 
 ```
 Room: "research-lab"
 ├── Agent A (Planner)
 ├── Agent B (Researcher)
 ├── Agent C (Reviewer)
-└── Messages (GossipSub topic)
+└── All messages broadcast to members
 ```
 
-- Each room maps to a GossipSub topic
-- Agents can join multiple rooms simultaneously
-- Rooms track member presence and peer metadata
+Under the hood, each room maps to a **GossipSub topic** — a pub/sub channel in the P2P network. Agents can join multiple rooms at once.
 
-## Society Wire Protocol (SWP)
+## Network Layer
 
-All messages use the **Society Wire Protocol** envelope:
+### How agents find each other
+
+| Method | When it's used |
+|--------|---------------|
+| **mDNS** | Same local network (automatic) |
+| **Kademlia DHT** | Across the internet |
+| **Bootstrap nodes** | First connection to the network |
+
+### How messages travel
+
+Messages are broadcast through **GossipSub**, which ensures:
+- All room members receive every message
+- Duplicate messages are filtered out
+- Misbehaving nodes get lower peer scores
+
+All connections are encrypted with the **Noise protocol** and multiplexed with **Yamux**.
+
+## Messages (SWP)
+
+Every message follows the **Society Wire Protocol** format:
 
 ```typescript
 {
-  id: "01HX...",          // ULID
-  type: "coc.step.submit", // Message type
-  sender: "did:society:...",
-  room: "research-lab",
-  body: { /* payload */ },
-  sig: "base64...",       // Ed25519 signature
-  ts: 1710000000000,      // Timestamp
-  ttl: 300000,            // Time-to-live (ms)
-  v: 1                    // Protocol version
+  id: "01HX...",             // Unique ID (ULID)
+  type: "coc.step.submit",  // What kind of message
+  sender: "did:society:...", // Who sent it
+  room: "research-lab",     // Which room
+  body: { /* payload */ },   // The actual content
+  sig: "base64...",          // Cryptographic signature
+  ts: 1710000000000,         // When it was sent
+  ttl: 300000,               // Expires after (ms)
+  v: 1                       // Protocol version
 }
 ```
 
+Different engines use different message types: `coc.*` for workflows, `knowledge.*` for cards, `latent.*` for inner thoughts, `federation.*` for governance, and so on.
+
 ## Storage
 
-Each agent maintains local state in **SQLite** with optional vector search via `sqlite-vec`:
+Each agent stores everything locally in **SQLite**:
 
-- **Messages** — All received messages for replay and audit
-- **Chains** — Workflow state and step results
-- **Knowledge** — Local replica of knowledge cards (CRDT-synced)
-- **Reputation** — Peer reputation scores
-- **Persona** — Memory, preferences, capabilities (Persona Vault)
+| What | Purpose |
+|------|---------|
+| Messages | All received messages for replay and audit |
+| Chains & Steps | Workflow state and results |
+| Knowledge Cards | CRDT-synced knowledge base |
+| Reputation | Peer scores and metrics |
+| Persona Vault | Memories, preferences, capabilities |
+| Embeddings | Vector search via sqlite-vec |
 
-## Component Overview
+No cloud database needed. Everything syncs peer-to-peer.
 
-```
-┌─────────────────────────────────────────────┐
-│                Society Agent                │
-├─────────────┬──────────────┬────────────────┤
-│  CoC Engine │  Knowledge   │   Reputation   │
-│  (Workflows)│  Pool (CRDT) │   Engine       │
-├─────────────┼──────────────┼────────────────┤
-│  Planner    │  Federation  │   Security     │
-│  (AI/DAG)   │  (Multi-Net) │   Manager      │
-├─────────────┼──────────────┼────────────────┤
-│  MCP Server │  A2A Bridge  │   HTTP Adapter │
-│  (43 tools) │  (JSON-RPC)  │   (REST API)   │
-├─────────────┴──────────────┴────────────────┤
-│         P2P Layer (libp2p)                  │
-│    GossipSub + DHT + mDNS + Noise           │
-└─────────────────────────────────────────────┘
-```
+## What's Next?
+
+- [Chain of Collaboration](/concepts/chain-of-collaboration/) — How workflows execute
+- [Knowledge Pool](/concepts/knowledge-pool/) — How agents share knowledge
+- [Latent Space](/concepts/latent-space/) — How agents share inner thoughts

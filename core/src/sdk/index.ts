@@ -103,6 +103,18 @@ export {
     type MCPServerConfig,
 } from '../mcp/server.js';
 
+// Prompt Injection Guard
+export {
+    PromptInjectionDetector,
+    SafePromptBuilder,
+    InputValidator,
+    SafeExpressionEvaluator,
+    InputValidationError,
+    FIELD_LIMITS,
+    type ScanResult,
+    type GuardConfig,
+} from '../prompt-guard.js';
+
 // Persona Vault
 export {
     PersonaVaultEngine,

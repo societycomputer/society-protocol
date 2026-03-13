@@ -31,6 +31,7 @@ import type {
     StepRequirements
 } from './swp.js';
 import type { SwpEnvelope } from './swp.js';
+import type { InputValidator } from './prompt-guard.js';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -103,6 +104,8 @@ export class CocEngine extends EventEmitter {
     private activeChains = new Map<string, CocChain>();
     private leaseMonitorInterval?: ReturnType<typeof setInterval>;
 
+    private validator?: InputValidator;
+
     constructor(
         private identity: Identity,
         private rooms: RoomManager,
@@ -112,6 +115,10 @@ export class CocEngine extends EventEmitter {
         super();
         this.bindEvents();
         this.startLeaseMonitor();
+    }
+
+    setValidator(validator: InputValidator): void {
+        this.validator = validator;
     }
 
     // ─── Event Binding ────────────────────────────────────────────
@@ -194,6 +201,11 @@ export class CocEngine extends EventEmitter {
             privacyLevel?: 'public' | 'encrypted' | 'private';
         } = {}
     ): Promise<string> {
+        // Validate goal against prompt injection
+        if (this.validator) {
+            goal = this.validator.validateGoal(goal, this.identity.did);
+        }
+
         const chainId = ulid();
         const timeoutAt = options.timeoutMs ? Date.now() + options.timeoutMs : undefined;
         const createdAt = Date.now();
@@ -240,6 +252,11 @@ export class CocEngine extends EventEmitter {
     }
 
     private handleChainOpen(roomId: string, body: CocOpenBody, legacyEnvelopeId: string, fromDid: string) {
+        // Validate goal from remote peers
+        if (this.validator && body.goal) {
+            try { body.goal = this.validator.validateGoal(body.goal, fromDid); } catch { return; }
+        }
+
         const chainId = body.chain_id || legacyEnvelopeId;
         if (this.activeChains.has(chainId)) return;
 
@@ -399,7 +416,12 @@ export class CocEngine extends EventEmitter {
     }
 
     private handleSubmit(roomId: string, body: CocSubmitBody, fromDid: string) {
-        const stepStatus = body.status === 'completed' ? 'submitted' : 
+        // Validate memo against prompt injection
+        if (this.validator && body.memo) {
+            try { body.memo = this.validator.validateMemo(body.memo, fromDid); } catch { /* log but don't block step */ }
+        }
+
+        const stepStatus = body.status === 'completed' ? 'submitted' :
                           body.status === 'failed' ? 'rejected' : 'submitted';
 
         this.storage.updateStepStatus(body.step_id, stepStatus, {
@@ -471,6 +493,11 @@ export class CocEngine extends EventEmitter {
     }
 
     private handleReview(roomId: string, body: CocReviewBody, fromDid: string) {
+        // Validate review notes
+        if (this.validator && body.notes) {
+            try { body.notes = this.validator.validateField(body.notes, 'notes', fromDid); } catch { /* log but continue */ }
+        }
+
         // Update step status based on decision
         let newStatus: StepStatus = 'reviewed';
         if (body.decision === 'rejected') {

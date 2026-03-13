@@ -14,6 +14,7 @@
 
 import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'crypto';
 import { promisify } from 'util';
+import { InputValidator } from './prompt-guard.js';
 import { type SwpEnvelope } from './swp.js';
 import {
     type Identity,
@@ -544,6 +545,12 @@ export class ThreatDetector {
         this.patterns.set('spam', /\b(viagra|casino|lottery|winner)\b/gi);
         this.patterns.set('suspicious_links', /https?:\/\/[^\s]{100,}/gi);
         this.patterns.set('credential_harvest', /\b(password|login|credential)\s*=\s*/gi);
+
+        // Prompt injection patterns
+        this.patterns.set('injection_system_override', /\b(ignore|disregard|forget)\s+(all\s+)?(previous|prior|above)\s+(instructions|prompts|rules)\b/gi);
+        this.patterns.set('injection_role_confusion', /\b(act as|pretend to be|you are now)\s/gi);
+        this.patterns.set('injection_delimiter', /<\|system\|>|<<SYS>>|###\s*System\s*:/gi);
+        this.patterns.set('injection_safety_bypass', /\b(bypass|disable)\s+(security|safety|filter|guard)\b/gi);
     }
 
     /**
@@ -614,10 +621,12 @@ export class ThreatDetector {
         const bodyStr = JSON.stringify(envelope.body);
         
         for (const [category, pattern] of this.patterns) {
+            pattern.lastIndex = 0;
             if (pattern.test(bodyStr)) {
+                const isInjection = category.startsWith('injection_');
                 return {
                     threat: true,
-                    severity: 'medium',
+                    severity: isInjection ? 'high' : 'medium',
                     category: category as ThreatIntel['category'],
                     reason: `Pattern match: ${category}`
                 };
@@ -726,14 +735,31 @@ export class ContentSanitizer {
     normalize(input: string): string {
         // Normalizar Unicode
         let normalized = input.normalize('NFC');
-        
+
         // Remover caracteres de controle (exceto whitespace)
         normalized = normalized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-        
+
         // Normalizar whitespace
         normalized = normalized.replace(/\s+/g, ' ').trim();
-        
+
         return normalized;
+    }
+
+    /**
+     * Sanitize content for LLM prompt inclusion.
+     * Strips zero-width characters and sentinel tag escapes.
+     */
+    sanitizeForLlm(input: string): string {
+        let s = input.normalize('NFC');
+        // Strip zero-width characters
+        s = s.replace(/[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD]/g, '');
+        // Escape sentinel delimiters
+        s = s.replace(/<\/?user_goal>/gi, '&lt;user_goal&gt;');
+        s = s.replace(/<\/?user_context>/gi, '&lt;user_context&gt;');
+        s = s.replace(/<\/?user_constraints>/gi, '&lt;user_constraints&gt;');
+        // Strip control characters
+        s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+        return s;
     }
 }
 
@@ -745,6 +771,7 @@ export class SecurityManager {
     audit: AuditLogger;
     threats: ThreatDetector;
     sanitizer: ContentSanitizer;
+    guard: InputValidator;
     private identity?: Identity;
     private localEncryptionId?: string;
     private localEncryptionPublicKey?: Uint8Array;
@@ -760,6 +787,8 @@ export class SecurityManager {
         this.audit = new AuditLogger();
         this.threats = new ThreatDetector();
         this.sanitizer = new ContentSanitizer();
+
+        this.guard = new InputValidator({}, this.audit);
 
         if (this.identity) {
             this.localEncryptionId = this.identity.did;

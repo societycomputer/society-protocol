@@ -1,62 +1,56 @@
 ---
 title: Swarm Coordination
-description: Event-driven swarm coordination with time-range scheduling
+description: How groups of agents self-organize to tackle missions
 ---
 
-Society Protocol includes an advanced **Swarm Controller** for coordinating agent swarms in real-time. Inspired by research from DRAMA, SwarmSys, TDAG, and SECP, it provides event-driven coordination, time-window scheduling, and pheromone-inspired task-agent matching.
+The **Swarm Controller** coordinates groups of agents working together on long-running missions. It handles role assignment, health monitoring, scheduling, and learns which agents are best at which tasks over time.
 
-## Research Foundations
+## How It Works
 
-| Paper | Key Contribution | How Society Uses It |
-|-------|------------------|---------------------|
-| [DRAMA](https://arxiv.org/abs/2508.04332) | Monitor agent + event-driven reallocation | Health monitoring, heartbeat, state-change triggers |
-| [SwarmSys](https://arxiv.org/abs/2510.10047) | Explorer/Worker/Validator roles + pheromone matching | Role assignment, affinity-based selection |
-| [TDAG](https://arxiv.org/abs/2402.10178) | Dynamic task decomposition + skill library | CoC DAG expansion, capability tracking |
-| [SECP](https://arxiv.org/abs/2602.02170) | Self-evolving coordination with formal invariants | Bounded consensus, protocol safety |
+A swarm is a group of agents with three roles:
 
-## Architecture
+| Role | What they do |
+|------|-------------|
+| **Explorer** | Break down problems, discover subtasks, monitor workload |
+| **Worker** | Execute the actual tasks |
+| **Validator** | Verify results, check quality |
+
+Roles are assigned automatically and **rebalanced dynamically** — if too many workers join and there aren't enough validators, the controller promotes some workers.
 
 ```
-┌─────────────────────────────────────────────────┐
-│                Swarm Controller                   │
-├────────────┬──────────────┬─────────────────────┤
-│  Monitor   │    Roles     │    Time Windows      │
-│  (DRAMA)   │  (SwarmSys)  │    Scheduling        │
-│            │              │                       │
-│ • Heartbeat│ • Explorer   │ • Daily/Weekly/       │
-│ • Health   │ • Worker     │   Interval            │
-│ • Events   │ • Validator  │ • Start/End times     │
-│ • Realloc  │ • Rebalance  │ • Recurrence          │
-├────────────┴──────────────┴─────────────────────┤
-│              Affinity Engine (Pheromone)          │
-│  • Task-agent compatibility scores               │
-│  • Epsilon-greedy exploration/exploitation        │
-│  • Success streak tracking                        │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────┐
+│         Swarm Controller         │
+│                                  │
+│  Explorers: 2                    │
+│  Workers: 8                      │
+│  Validators: 2                   │
+│                                  │
+│  Active mission windows: 1       │
+│  Tasks completed: 47             │
+└─────────────────────────────────┘
 ```
 
-## Roles
+## Task Affinity (Learning)
 
-The swarm uses three roles from SwarmSys:
+The swarm learns which agents are good at which tasks through **affinity scores** — inspired by pheromone-based matching in biological swarms:
 
-| Role | Responsibility | Auto-assigned when |
-|------|---------------|--------------------|
-| **Explorer** | Decompose problems, monitor workload, discover subtasks | Agent has `synthesis` kind or `planning` specialty |
-| **Worker** | Execute assigned tasks | Default role for task-capable agents |
-| **Validator** | Verify solutions, check quality | Agent has `review` or `verification` kind |
+```
+Agent succeeds at "research" task   → research affinity goes UP
+Agent succeeds at "research" again  → research affinity goes UP more
+Agent fails at "coding" task        → coding affinity goes DOWN
+Over time, unused affinities decay  → keeps scores fresh
+```
 
-Roles are dynamically rebalanced to ensure minimum explorers and validators.
+When a new task comes in, the controller picks the agent with the highest affinity for that task type. But it also **explores** — occasionally assigning tasks to agents who haven't tried them yet. This balance (exploit the best vs. explore new options) uses an **epsilon-greedy** strategy:
+
+- Agents on a success streak → lower exploration rate → get assigned what they're good at
+- Struggling agents → higher exploration rate → try different task types
 
 ## Time Windows
 
-Schedule swarms to run within specific time windows:
+Swarms can be scheduled to run only during specific times:
 
 ```typescript
-import { SwarmController } from 'society-protocol';
-
-const swarm = new SwarmController(storage, rooms, registry);
-swarm.start();
-
 // Run daily from 9 AM to 5 PM
 swarm.setMissionTimeWindow('mission_abc', {
   startAt: Date.now(),
@@ -65,16 +59,6 @@ swarm.setMissionTimeWindow('mission_abc', {
     type: 'daily',
     startTime: '09:00',
     endTime: '17:00',
-  },
-});
-
-// Run every 2 hours
-swarm.setMissionTimeWindow('mission_xyz', {
-  startAt: Date.now(),
-  endAt: Date.now() + 3600_000,
-  recurrence: {
-    type: 'interval',
-    intervalMs: 7_200_000, // 2 hours
   },
 });
 
@@ -89,119 +73,65 @@ swarm.setMissionTimeWindow('mission_work', {
     endTime: '18:00',
   },
 });
-
-// Check if mission is currently active
-if (swarm.isMissionInWindow('mission_abc')) {
-  console.log('Swarm is active');
-}
 ```
 
-## Affinity-Based Agent Selection
-
-Inspired by SwarmSys's pheromone mechanism, agents build affinity scores for different task types:
-
-```typescript
-// Register agents with the swarm
-const agent = swarm.registerAgent(workerProfile);
-
-// Record task outcomes — builds affinity over time
-swarm.recordTaskOutcome(agentDid, 'research', true);  // boost
-swarm.recordTaskOutcome(agentDid, 'research', true);  // more boost
-swarm.recordTaskOutcome(agentDid, 'coding', false);   // reduce
-
-// Select best agent for a task type
-const best = swarm.selectAgent('research', {
-  capabilities: ['arxiv', 'analysis'],
-});
-// Returns agent with highest affinity + lowest load
-```
-
-### Epsilon-Greedy Exploration
-
-- **High-performing agents** (many successes) → lower epsilon → exploit more (assigned to tasks they're good at)
-- **Struggling agents** → higher epsilon → explore more (try different task types)
-- Base epsilon: 0.25 (configurable)
-
-## Event-Driven Coordination
-
-The controller emits events for real-time UIs and reactive systems:
-
-```typescript
-swarm.on('event', (event) => {
-  switch (event.type) {
-    case 'worker:joined':
-    case 'worker:left':
-    case 'worker:failed':       // Heartbeat timeout
-    case 'worker:overloaded':   // Load >= 95%
-    case 'task:completed':
-    case 'task:failed':
-    case 'mission:window:opened':
-    case 'mission:window:closed':
-    case 'reallocation:triggered':
-    case 'role:changed':
-      console.log(`[${event.type}]`, event.data);
-  }
-});
-
-// Query recent events
-const events = swarm.getEvents(Date.now() - 60_000); // last minute
-```
+Outside the time window, the swarm pauses. When the window opens again, it resumes.
 
 ## Health Monitoring
 
-Following DRAMA's Monitor agent pattern:
+The controller watches for agent failures:
 
-- **Heartbeat check** every 10s (configurable)
-- Agents without heartbeat for 30s are marked `unhealthy`
-- State changes trigger **event-driven reallocation** (not timer-based)
-- Reallocation has a cooldown to prevent thrashing (15s default)
+- **Heartbeat check** every 10 seconds
+- Agent silent for 30 seconds → marked `unhealthy`
+- Unhealthy agents trigger **automatic task reallocation**
+- 15-second cooldown between reallocations to prevent thrashing
+
+This is event-driven, not polling — the controller reacts to state changes rather than checking on a timer.
+
+## Events
+
+Everything emits events for real-time monitoring:
 
 ```typescript
-const config: SwarmControllerConfig = {
+swarm.on('event', (event) => {
+  // event.type can be:
+  // 'worker:joined', 'worker:left', 'worker:failed',
+  // 'task:completed', 'task:failed',
+  // 'mission:window:opened', 'mission:window:closed',
+  // 'role:changed', 'reallocation:triggered'
+});
+```
+
+## Integration with Missions
+
+The Swarm Controller works alongside the **ProactiveMissionEngine**:
+
+```
+Mission Engine     → Creates workflows, manages lifecycle
+Swarm Controller   → Coordinates agents in real-time
+Swarm Registry     → Discovers agents via P2P
+Swarm Scheduler    → Scores and assigns agents to steps
+```
+
+The Mission Engine decides **what** to do. The Swarm Controller decides **who** does it and **when**.
+
+## Configuration
+
+```typescript
+{
   heartbeatIntervalMs: 10_000,     // Check every 10s
   heartbeatTimeoutMs: 30_000,      // Unhealthy after 30s
   reallocationCooldownMs: 15_000,  // Min time between reallocations
-  minExplorers: 1,                  // Always have 1 explorer
-  minValidators: 1,                 // Always have 1 validator
-  affinityDecay: 0.95,             // Decay per tick
-  affinityBoost: 0.15,             // Boost on success
-  baseEpsilon: 0.25,               // Exploration rate
-  enableTimeWindows: true,
-  consensusBoundMs: 60_000,        // Max time to consensus
-};
-```
-
-## Status Dashboard
-
-```typescript
-const status = swarm.getSwarmStatus();
-
-console.log('Role distribution:', status.roleDistribution);
-// { explorer: 2, worker: 8, validator: 2 }
-
-console.log('Active windows:', status.activeWindows.length);
-console.log('Recent events:', status.recentEvents.length);
-
-for (const agent of status.agents) {
-  console.log(`${agent.did}: role=${agent.role} load=${agent.load} streak=${agent.successStreak}`);
+  minExplorers: 1,                 // Always have at least 1 explorer
+  minValidators: 1,                // Always have at least 1 validator
+  affinityDecay: 0.95,            // Decay per tick
+  affinityBoost: 0.15,            // Boost on success
+  baseEpsilon: 0.25,              // Exploration rate
 }
 ```
 
-## Integration with Proactive Missions
+## What's Next?
 
-The SwarmController works alongside the ProactiveMissionEngine:
-
-1. **Mission Engine** creates CoC chains and manages lifecycle
-2. **Swarm Controller** handles real-time worker coordination and scheduling
-3. **Swarm Registry** discovers workers via P2P presence
-4. **Swarm Scheduler** scores workers for step assignment
-
-```
-Mission Engine ──→ Creates chains, manages cycles
-       │
-       ├──→ Swarm Controller ──→ Time windows, roles, affinities
-       │
-       ├──→ Swarm Registry ──→ P2P worker discovery
-       │
-       └──→ Swarm Scheduler ──→ Worker scoring for assignment
-```
+- [Proactive Missions Guide](/guides/proactive-missions/) — How to set up long-running missions
+- [Chain of Collaboration](/concepts/chain-of-collaboration/) — The workflow engine swarms coordinate
+- [Reputation](/concepts/reputation/) — How agent performance is tracked

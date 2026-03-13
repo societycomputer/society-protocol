@@ -1,16 +1,15 @@
 ---
 title: Templates
-description: Pre-built workflow templates for common collaboration patterns
+description: Pre-built workflow patterns for common tasks
 ---
 
-Templates are pre-built workflow patterns that generate DAGs for common tasks. Instead of relying on the AI planner to design every workflow from scratch, templates provide proven structures with parallel execution, specialist routing, and configurable options.
+**Templates** are pre-built workflow patterns. Instead of the AI planner designing every workflow from scratch, templates provide proven DAG structures for common tasks.
 
-## How Templates Work
+## How They Work
 
-1. Choose a template by ID (e.g., `research_swarm`)
-2. Provide a goal description
-3. Optionally configure template-specific options
-4. The template generates a complete DAG of steps
+1. Pick a template (e.g., `research_swarm`)
+2. Provide a goal
+3. The template generates a complete DAG with steps, dependencies, and requirements
 
 ```typescript
 const chain = await client.summon({
@@ -20,53 +19,59 @@ const chain = await client.summon({
 });
 ```
 
-## Template Categories
+That single call generates a DAG like:
 
-### Software (2 templates)
-- `software_feature` — Full SDLC: Design → Implement → Review → Test → Deploy
-- `bug_fix` — Investigate → Reproduce → Fix → Verify → Deploy
+```
+scope_research
+├── investigate_domain_1  ─┐
+├── investigate_domain_2  ─┤  parallel
+├── investigate_domain_3  ─┘
+└── synthesize_findings
+    └── final_review
+```
 
-### Research (5 templates)
-- `research_swarm` — Parallel research across sub-domains with synthesis
-- `literature_review` — Academic search → screen → extract → synthesize
-- `literature_review_continuous` — Ongoing literature monitoring with dual review
-- `hypothesis_swarm` — Generate, attack, and validate competing hypotheses
-- `research_monitor` — Watch for new papers and evidence deltas
+## Available Templates
 
-### Medical (5 templates)
-- `second_opinion` — Medical case review with expert validation
-- `rare_disease_diagnosis` — Multi-specialist parallel diagnosis
-- `clinical_trial_monitor` — Multi-site trial surveillance and DSMB review
-- `drug_interaction_analysis` — PK/PD analysis with interaction matrix
-- `epidemiological_investigation` — Outbreak investigation pipeline
+### Software
 
-### Business (1 template)
-- `strategic_analysis` — Market → Competition → Strategy → Plan
+| Template | What it does |
+|----------|-------------|
+| `software_feature` | Design → Implement → Review → Test → Deploy |
+| `bug_fix` | Investigate → Reproduce → Fix → Verify → Deploy |
 
-### Creative (1 template)
-- `content_creation` — Outline → Draft → Review → Edit → Publish
+### Research
 
-### Generic (2 templates)
-- `simple_task` — Execute → Review → Finalize
-- `parallel_execution` — Split → Execute in parallel → Merge
+| Template | What it does |
+|----------|-------------|
+| `research_swarm` | Parallel research across sub-domains with synthesis |
+| `literature_review` | Search → Screen → Extract → Synthesize |
+| `literature_review_continuous` | Ongoing monitoring with dual review |
+| `hypothesis_swarm` | Generate, attack, and validate competing hypotheses |
+| `research_monitor` | Watch for new papers and evidence |
 
-## Configurable Options
+### Medical
 
-Some templates accept options to customize the generated DAG:
+| Template | What it does |
+|----------|-------------|
+| `second_opinion` | Medical case review with expert validation |
+| `rare_disease_diagnosis` | Multi-specialist parallel diagnosis |
+| `clinical_trial_monitor` | Multi-site trial surveillance + DSMB review |
+| `drug_interaction_analysis` | PK/PD analysis with interaction matrix |
+| `epidemiological_investigation` | Outbreak investigation pipeline |
 
-| Template | Option | Default | Description |
-|----------|--------|---------|-------------|
-| `research_swarm` | `domains` | 3 | Number of parallel research tracks |
-| `literature_review_continuous` | `domains` | 4 | Number of parallel search domains |
-| `hypothesis_swarm` | `domains` | 4 | Number of competing hypotheses |
-| `parallel_execution` | `subtasks` | 3 | Number of parallel tasks |
-| `rare_disease_diagnosis` | `specialists` | 4 default specialties | Custom specialist list |
-| `clinical_trial_monitor` | `sites` | 3 | Number of trial sites |
+### Other
+
+| Template | What it does |
+|----------|-------------|
+| `strategic_analysis` | Market → Competition → Strategy → Plan |
+| `content_creation` | Outline → Draft → Review → Edit → Publish |
+| `simple_task` | Execute → Review → Finalize |
+| `parallel_execution` | Split → Execute in parallel → Merge |
 
 ## Listing Templates
 
 ```typescript
-// List all templates
+// All templates
 const all = client.listTemplates();
 
 // Filter by category
@@ -77,4 +82,7 @@ import { searchTemplates } from 'society-protocol';
 const results = searchTemplates('pharmacology');
 ```
 
-See the [Templates Reference](/api-reference/templates-reference/) for the complete specification of every template.
+## What's Next?
+
+- [Chain of Collaboration](/concepts/chain-of-collaboration/) — How DAGs execute
+- [Templates Reference](/api-reference/templates-reference/) — Full specification of every template

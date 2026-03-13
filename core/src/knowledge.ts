@@ -13,6 +13,7 @@ import { EventEmitter } from 'events';
 import { ulid } from 'ulid';
 import { type Storage } from './storage.js';
 import { type Identity } from './identity.js';
+import type { InputValidator } from './prompt-guard.js';
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -367,6 +368,8 @@ export class KnowledgePool extends EventEmitter {
     private compactionConfig: ContextCompactionConfig;
     private compacting = new Set<string>(); // spaces currently compacting
 
+    private validator?: InputValidator;
+
     constructor(
         private storage: Storage,
         private identity: Identity,
@@ -375,6 +378,10 @@ export class KnowledgePool extends EventEmitter {
         super();
         this.compactionConfig = { ...DEFAULT_COMPACTION_CONFIG, ...compactionConfig };
         this.loadFromStorage();
+    }
+
+    setValidator(validator: InputValidator): void {
+        this.validator = validator;
     }
 
     // ─── Space Management ────────────────────────────────────────
@@ -445,9 +452,15 @@ export class KnowledgePool extends EventEmitter {
         const space = this.spaces.get(spaceId);
         if (!space) throw new Error('Space not found');
 
+        // Validate against prompt injection
+        if (this.validator) {
+            title = this.validator.validateTitle(title);
+            content = this.validator.validateContent(content);
+        }
+
         const id = `know_${ulid()}`;
         const now = Date.now();
-        
+
         const card: KnowledgeCard = {
             id,
             spaceId,

@@ -18,6 +18,7 @@ import { FederationEngine, type FederationPeeringPolicy, type FederationPeeringS
 import { KnowledgePool } from '../knowledge.js';
 import { SkillsEngine } from '../skills/engine.js';
 import { SecurityManager } from '../security.js';
+import { InputValidator } from '../prompt-guard.js';
 import { IntegrationEngine, type MeshBridgeRules } from '../integration.js';
 import { listTemplates, type Template } from '../templates.js';
 import type { CocDagNode, Artifact, AdapterCapabilities, AdapterHeartbeatBody, AdapterProfile } from '../swp.js';
@@ -245,6 +246,12 @@ export class SocietyClient extends EventEmitter {
                     leaseRenewIntervalMs: this.config.proactive?.leaseRenewIntervalMs,
                 }
             );
+
+            // Initialize prompt injection guard and wire to all engines
+            const validator = new InputValidator({}, this.security.audit);
+            this.coc.setValidator(validator);
+            this.knowledge.setValidator(validator);
+            this.rooms.setValidator(validator);
 
             // Setup event forwarding
             this.setupEventForwarding();
@@ -1541,6 +1548,11 @@ export class SocietyClient extends EventEmitter {
     getMultiaddrs(): string[] {
         this.ensureConnected();
         return this.p2p.getMultiaddrs();
+    }
+
+    getP2PNode(): P2PNode {
+        this.ensureConnected();
+        return this.p2p;
     }
 
     getCapabilities(): string[] {

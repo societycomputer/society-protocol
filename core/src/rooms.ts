@@ -36,6 +36,7 @@ import { type KnowledgePool, type ChatMessage } from './knowledge.js';
 import { verifyIdentityProof, createIdentityProof, type IdentityProof } from './identity-proof.js';
 import { ulid } from 'ulid';
 import { EventEmitter } from 'events';
+import type { InputValidator } from './prompt-guard.js';
 
 // ─── Events ─────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ export class RoomManager extends EventEmitter {
     private encryptedRooms = new Set<string>();
     private verifiedPeers = new Map<string, Map<string, IdentityProof>>();
     private knowledgePool?: KnowledgePool;
+    private validator?: InputValidator;
     private presenceBroadcastInterval?: ReturnType<typeof setInterval>;
     private replayCachePruneInterval?: ReturnType<typeof setInterval>;
 
@@ -97,6 +99,10 @@ export class RoomManager extends EventEmitter {
      */
     setKnowledgePool(pool: KnowledgePool): void {
         this.knowledgePool = pool;
+    }
+
+    setValidator(validator: InputValidator): void {
+        this.validator = validator;
     }
 
     private setupP2PHandlers(): void {
@@ -544,6 +550,11 @@ export class RoomManager extends EventEmitter {
     private handleChatMessage(envelope: SwpEnvelope): void {
         const body = envelope.body as unknown as ChatMsgBody;
         const roomId = envelope.room;
+
+        // Validate chat text against prompt injection
+        if (this.validator && body.text) {
+            try { body.text = this.validator.validateMessage(body.text, envelope.from.did); } catch { /* log but don't block chat */ }
+        }
 
         // Store message
         this.storage.saveMessage(

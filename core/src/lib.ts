@@ -39,6 +39,16 @@ export {
 } from './knowledge.js';
 export { SkillsEngine } from './skills/engine.js';
 export { SecurityManager } from './security.js';
+export {
+    PromptInjectionDetector,
+    SafePromptBuilder,
+    InputValidator,
+    SafeExpressionEvaluator,
+    InputValidationError,
+    FIELD_LIMITS,
+    type ScanResult,
+    type GuardConfig,
+} from './prompt-guard.js';
 export { IntegrationEngine } from './integration.js';
 export { ProactiveMissionEngine } from './proactive/engine.js';
 export { P2PSwarmRegistry } from './proactive/swarm-registry.js';

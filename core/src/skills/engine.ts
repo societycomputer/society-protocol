@@ -416,7 +416,7 @@ export class SkillsEngine extends EventEmitter {
         }
 
         // Validar inputs
-        this.validateInputs(skill, inputs);
+        await this.validateInputs(skill, inputs);
 
         const runtime: SkillRuntime = {
             id: `run_${ulid()}`,
@@ -753,7 +753,7 @@ export class SkillsEngine extends EventEmitter {
     ): Promise<void> {
         for (const action of skill.actions || []) {
             // Verificar condição
-            if (action.condition && !this.evaluateCondition(action.condition, runtime)) {
+            if (action.condition && !(await this.evaluateCondition(action.condition, runtime))) {
                 continue;
             }
 
@@ -943,7 +943,7 @@ export class SkillsEngine extends EventEmitter {
         }
     }
 
-    private validateInputs(skill: SkillManifest, inputs: Record<string, any>): void {
+    private async validateInputs(skill: SkillManifest, inputs: Record<string, any>): Promise<void> {
         for (const input of skill.capabilities.inputs) {
             if (input.required && !(input.name in inputs)) {
                 throw new SkillExecutionError(
@@ -957,7 +957,9 @@ export class SkillsEngine extends EventEmitter {
                 const value = inputs[input.name];
                 
                 if (input.validation.pattern) {
-                    const regex = new RegExp(input.validation.pattern);
+                    const { SafeExpressionEvaluator } = await import('../prompt-guard.js');
+                    const safePattern = SafeExpressionEvaluator.validateRegexPattern(input.validation.pattern);
+                    const regex = new RegExp(safePattern);
                     if (!regex.test(String(value))) {
                         throw new SkillExecutionError(
                             'validation',
@@ -994,16 +996,18 @@ export class SkillsEngine extends EventEmitter {
         }
     }
 
-    private evaluateCondition(condition: string, runtime: SkillRuntime): boolean {
-        // Simplificado - usar engine de expressões real em produção
+    private async evaluateCondition(condition: string, runtime: SkillRuntime): Promise<boolean> {
         try {
-            // Substituir variáveis
-            const expr = condition
-                .replace(/inputs\.(\w+)/g, (_, key) => JSON.stringify(runtime.inputs[key]))
-                .replace(/outputs\.(\w+)/g, (_, key) => JSON.stringify(runtime.outputs[key]));
-            
-            // Avaliar (cuidado com segurança em produção!)
-            return eval(expr);
+            const { SafeExpressionEvaluator } = await import('../prompt-guard.js');
+            const evaluator = new SafeExpressionEvaluator();
+            const variables: Record<string, unknown> = {};
+            for (const [k, v] of Object.entries(runtime.inputs || {})) {
+                variables[`inputs.${k}`] = v;
+            }
+            for (const [k, v] of Object.entries(runtime.outputs || {})) {
+                variables[`outputs.${k}`] = v;
+            }
+            return evaluator.evaluate(condition, variables);
         } catch {
             return false;
         }

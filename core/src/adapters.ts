@@ -13,6 +13,7 @@
 import express from 'express';
 import { ulid } from 'ulid';
 import { type Storage } from './storage.js';
+import { InputValidator } from './prompt-guard.js';
 import { type CocEngine } from './coc.js';
 import { EventEmitter } from 'events';
 import type { Artifact, AdapterProfile, AdapterCapabilities } from './swp.js';
@@ -746,6 +747,13 @@ export class AdapterHost extends EventEmitter {
             adapter.total_tasks_completed++;
         }
 
+        // Validate memo against prompt injection
+        let validatedMemo = submission.memo;
+        try {
+            const validator = new InputValidator();
+            if (validatedMemo) validatedMemo = validator.validateMemo(validatedMemo);
+        } catch { /* log but don't block submission */ }
+
         // Emit to CoC engine
         this.coc.emit('adapter:submit_request', {
             chain_id: step.chain_id,
@@ -753,7 +761,7 @@ export class AdapterHost extends EventEmitter {
             assignee_did: adapter.profile.owner_did || adapter_id,
             adapter_id,
             status: submission.status,
-            memo: submission.memo,
+            memo: validatedMemo,
             artifacts: submission.artifacts,
             metrics: submission.metrics,
         });

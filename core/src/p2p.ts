@@ -576,6 +576,10 @@ export class P2PNode extends EventEmitter {
         return { ...this.stats };
     }
 
+    getSubscribedTopics(): string[] {
+        return [...this.subscribedTopics];
+    }
+
     async connectToPeer(address: string): Promise<boolean> {
         try {
             const { multiaddr } = await import('@multiformats/multiaddr');

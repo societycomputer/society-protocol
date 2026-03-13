@@ -19,6 +19,7 @@ import {
     Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { type SocietyClient } from '../sdk/client.js';
+import { InputValidator, InputValidationError } from '../prompt-guard.js';
 
 export interface MCPServerConfig {
     client: SocietyClient;
@@ -28,11 +29,13 @@ export interface MCPServerConfig {
 export class SocietyMCPServer {
     private server: Server;
     private client: SocietyClient;
+    private validator: InputValidator;
     private enableReadOnly: boolean;
 
     constructor(config: MCPServerConfig) {
         this.client = config.client;
         this.enableReadOnly = config.enableReadOnly ?? false;
+        this.validator = new InputValidator();
 
         this.server = new Server(
             {
@@ -881,7 +884,40 @@ export class SocietyMCPServer {
         ];
     }
 
+    private validateToolArgs(name: string, args: any): any {
+        if (!args) return args;
+        try {
+            switch (name) {
+                case 'society_summon':
+                case 'society_start_mission':
+                    if (args.goal) args.goal = this.validator.validateGoal(args.goal);
+                    break;
+                case 'society_submit_step':
+                    if (args.result) args.result = this.validator.validateOutput(args.result);
+                    break;
+                case 'society_send_message':
+                    if (args.message) args.message = this.validator.validateMessage(args.message);
+                    break;
+                case 'society_review_step':
+                    if (args.notes) args.notes = this.validator.validateField(args.notes, 'notes');
+                    break;
+                case 'persona_add_memory':
+                    if (args.content) args.content = this.validator.validateContent(args.content);
+                    if (args.title) args.title = this.validator.validateTitle(args.title);
+                    break;
+                case 'society_create_knowledge':
+                    if (args.content) args.content = this.validator.validateContent(args.content);
+                    if (args.title) args.title = this.validator.validateTitle(args.title);
+                    break;
+            }
+        } catch (e) {
+            if (e instanceof InputValidationError) throw e;
+        }
+        return args;
+    }
+
     private async handleToolCall(name: string, args: any): Promise<any> {
+        args = this.validateToolArgs(name, args);
         switch (name) {
             case 'society_get_status':
                 return this.handleGetStatus();
